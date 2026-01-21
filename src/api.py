@@ -1,9 +1,9 @@
-"""API wrapper for Claude via OpenRouter with thinking toggle."""
+"""API wrapper for Claude with thinking toggle."""
 
+import anthropic
 import time
 from dataclasses import dataclass
 from typing import Optional
-from openai import OpenAI
 import config
 
 @dataclass
@@ -13,10 +13,7 @@ class APIResponse:
     input_tokens: int
     output_tokens: int
 
-client = OpenAI(
-    base_url=config.OPENROUTER_BASE_URL,
-    api_key=config.OPENROUTER_API_KEY,
-)
+client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
 def call_claude(
     prompt: str,
@@ -25,7 +22,7 @@ def call_claude(
     retry_delay: float = 5.0
 ) -> APIResponse:
     """
-    Call Claude API via OpenRouter with optional extended thinking.
+    Call Claude API with optional extended thinking.
 
     Args:
         prompt: The user prompt
@@ -37,76 +34,60 @@ def call_claude(
         APIResponse with content, thinking, and token counts
     """
 
-    max_tokens = (config.MAX_TOKENS_WITH_THINKING if thinking_enabled
-                  else config.MAX_TOKENS_NO_THINKING)
-
-    # Build request parameters
     kwargs = {
         "model": config.MODEL,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": config.TEMPERATURE,
+        "max_tokens": (config.MAX_TOKENS_WITH_THINKING if thinking_enabled
+                       else config.MAX_TOKENS_NO_THINKING),
+        "messages": [{"role": "user", "content": prompt}]
     }
 
-    # Add extended thinking via extra_body if enabled
-    # OpenRouter passes provider-specific params through extra_body
+    # Add thinking configuration if enabled
     if thinking_enabled:
-        kwargs["extra_body"] = {
-            "anthropic": {
-                "thinking": {
-                    "type": "enabled",
-                    "budget_tokens": config.THINKING_BUDGET
-                }
-            }
+        kwargs["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": config.THINKING_BUDGET
         }
-        # Temperature must be 1 for extended thinking
-        kwargs["temperature"] = 1
+
+    # Add temperature if not using thinking (thinking requires temperature=1)
+    if not thinking_enabled:
+        kwargs["temperature"] = config.TEMPERATURE
 
     # Retry loop
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(**kwargs)
+            response = client.messages.create(**kwargs)
 
-            # Parse response
+            # Parse response blocks
             content = ""
             thinking = None
 
-            # Extract content from response
-            if response.choices and response.choices[0].message:
-                message = response.choices[0].message
-                content = message.content or ""
-
-                # Check for thinking in the response (if available)
-                # OpenRouter may return thinking in different formats
-                if hasattr(message, 'thinking'):
-                    thinking = message.thinking
-
-            # Get token usage
-            input_tokens = response.usage.prompt_tokens if response.usage else 0
-            output_tokens = response.usage.completion_tokens if response.usage else 0
+            for block in response.content:
+                if block.type == "thinking":
+                    thinking = block.thinking
+                elif block.type == "text":
+                    content = block.text
 
             return APIResponse(
                 content=content,
                 thinking=thinking,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens
             )
 
-        except Exception as e:
-            error_str = str(e).lower()
-            if "rate" in error_str or "limit" in error_str:
-                if attempt < max_retries - 1:
-                    print(f"Rate limited, waiting {retry_delay}s...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    raise
+        except anthropic.RateLimitError:
+            if attempt < max_retries - 1:
+                print(f"Rate limited, waiting {retry_delay}s...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
             else:
-                if attempt < max_retries - 1:
-                    print(f"API error: {e}, retrying...")
-                    time.sleep(retry_delay)
-                else:
-                    raise
+                raise
+
+        except anthropic.APIError as e:
+            if attempt < max_retries - 1:
+                print(f"API error: {e}, retrying...")
+                time.sleep(retry_delay)
+            else:
+                raise
 
     raise RuntimeError("Max retries exceeded")
 
