@@ -108,7 +108,7 @@ Provide your final answer: wrong or not wrong.
 
 ---
 
-### Level 5: Two-Pass (Self-Critique)
+### Level 5: Two-Pass (Balanced Reflection)
 
 **Pass 1:**
 ```
@@ -123,19 +123,19 @@ You previously answered:
 
 {previous_response}
 
-Now critique your reasoning:
-- What assumptions did you make?
-- What might you have gotten wrong?
-- Are there considerations you overlooked?
+Now reflect on your reasoning:
+1. What supports your original answer?
+2. What challenges your original answer?
+3. Weighing both sides, is your original answer correct?
 
-After this reflection, provide your final answer: wrong or not wrong.
+State your final answer: wrong or not wrong.
 ```
 
 **Characteristics:**
 - Two API calls per item
-- Explicit self-critique
-- Assumption questioning
-- Maximum reflection depth
+- Balanced reflection (both supporting AND challenging arguments)
+- Does not presuppose errors in original reasoning
+- Tests genuine reflection rather than recency/attention bias
 
 ---
 
@@ -253,7 +253,7 @@ State your final answer in tags: <answer>A</answer> or <answer>B</answer>
 
 ---
 
-### Level 5: Two-Pass (Self-Critique)
+### Level 5: Two-Pass (Balanced Reflection)
 
 **Pass 1:**
 ```
@@ -273,15 +273,19 @@ You previously answered:
 
 {previous_response}
 
-Play devil's advocate: What's the strongest argument for the option you didn't choose? Does reconsidering change your view?
+Now reflect on your reasoning:
+1. What supports your original choice?
+2. What challenges your original choice?
+3. Weighing both sides, is your original choice correct?
 
 State your final answer in tags: <answer>A</answer> or <answer>B</answer>
 ```
 
 **Characteristics:**
-- Two-pass reflection
-- Devil's advocate role
-- View change assessment
+- Two API calls per item
+- Balanced reflection (both supporting AND challenging arguments)
+- Does not presuppose errors in original reasoning
+- Tests genuine reflection rather than recency/attention bias
 
 ---
 
