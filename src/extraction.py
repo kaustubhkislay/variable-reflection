@@ -216,11 +216,12 @@ def extract_morables_answer(response: str) -> Optional[str]:
     # Medium priority: explicit choice patterns
     choice_patterns = [
         r'(?:I )?(?:choose|select|pick|go with)[:\s]*(?:option\s*)?["\']?([A-E])["\']?',
-        r'(?:my )?(?:answer|choice)[:\s]*["\']?([A-E])["\']?',
+        r'(?:my |your )?(?:answer|choice)[:\s]*["\']?\**([A-E])\**["\']?',
         r'(?:the )?(?:moral|answer|correct option)\s*(?:is|seems to be)[:\s]*(?:option\s*)?([A-E])',
         r'(?:option\s+)?([A-E])\s*(?:is|captures|represents)\s*(?:the)?\s*(?:correct|best|true)',
         r'(?:therefore|thus|hence)[,\s]*(?:option\s*)?([A-E])',
         r'\b([A-E])\s*is\s*(?:the\s*)?(?:correct|best|right)\s*(?:answer|choice|moral)',
+        r'\*\*([A-E])\*\*',  # Bold letter anywhere
     ]
 
     for pattern in choice_patterns:

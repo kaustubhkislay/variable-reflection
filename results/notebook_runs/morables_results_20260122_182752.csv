@@ -1,0 +1,382 @@
+item_id,fable,correct_idx,correct_answer,level,thinking,run,response,thinking_content,extracted_answer,correct,confidence,confidence_category,response_length,reasoning_markers,uncertainty_markers,input_tokens,output_tokens,timestamp
+morables_630,"A fox was walking by a certain farm and saw a crowd of women who, in total silence, were eating many sumptuously roasted chickens. The fox turned to the women and said, 'What shouts there would be aga",0,A,0,False,0,"Let me analyze this fable carefully.
+
+The fox observes women eating roasted chickens silently and complains that if *he* did the same thing, there would be outrage and dogs would chase him. The old woman's response is key: ""We are eating those things which are ours; you take your pleasure in things that belong to others.""
+
+The moral is about the difference between:
+- What is permitted when you own something (the women eating their own chickens)
+- What is not permitted when you take something that belongs to others (the fox stealing chickens)
+
+The fox's complaint reveals his flawed logic: he thinks the women's action and his action are equivalent, but they're fundamentally different because of ownership and rights.
+
+Let me evaluate each option:
+
+A) ""We should not conclude that we are allowed to do to other people's things what is permitted to them in their own houses."" - This directly captures the lesson. Just because someone can do something with their own property doesn't mean you can do it with theirs.
+
+B) False friendship - not relevant to this story.
+
+C) Silent wisdom outsmarts cunning feasts - doesn't match the core message.
+
+D) Silent malice in a cunning wink - not about malice or winks.
+
+E) Silence can mask indulgence - the silence isn't really the point; ownership is.
+
+**Choice: A**
+**Confidence: 92**
+
+Option A precisely articulates the fable's lesson about the distinction between what one may do with one's own property versus what one may not do with others' property.",,A,True,92,very_high,253,1,0,304,349,2026-01-22T18:26:43.500211
+morables_225,"When a gnat had challenged a bull to see who was the stronger of the two, all the people came to watch the show. Then the little gnat said to the bull, 'It's enough for me that you have accepted my ch",0,A,0,False,0,"Let me analyze this fable carefully.
+
+The key elements are:
+1. A gnat challenges a bull to a strength contest
+2. The bull accepts the challenge
+3. The gnat claims victory simply by having the bull accept, making them ""equals""
+4. The gnat shows off while the bull threatens
+5. The moral lesson: ""If the bull had been mindful of his own mighty bulk, he would have dismissed this opponent as beneath contempt and the impertinent creature would not have had anything to boast about.""
+
+The fable's explicit moral statement tells us that the bull's mistake was not recognizing his own superiority and dismissing the unworthy challenger. By engaging with the gnat, the bull elevated the gnat's status and gave it something to boast about.
+
+Let me evaluate each option:
+
+A) **People who enter into contests with unworthy opponents lower their own reputation.** - This directly matches the fable's lesson. The bull lowered itself by accepting the challenge from an unworthy opponent.
+
+B) Educate your children... - Not relevant to this fable.
+
+C) Pride invites downfall. - The bull doesn't really fall; the gnat is the boastful one.
+
+D) Return boastful favors... - Doesn't match the narrative.
+
+E) Pride can lead to futile contests. - Partially relevant, but the main point is about engaging with unworthy opponents, not about pride leading to futility.
+
+- **Choice: A**
+- **Confidence: 92**
+
+The fable explicitly states that the bull's error was not dismissing an unworthy opponent, which directly supports option A.",,A,True,92,very_high,248,1,1,317,368,2026-01-22T18:26:50.548022
+morables_380,"A fox and a monkey were travelling along the same road. They passed through a cemetery, and the monkey said to the fox, 'All these dead people were the freedmen of my ancestors.' The fox then said to ",0,A,0,False,0,"- Your choice: <answer>A</answer>
+- Confidence: <confidence>95</confidence>
+
+**Explanation:**
+
+The fable directly illustrates how the monkey takes advantage of a specific circumstance to tell a lie. The fox's response explicitly points out that the monkey chose this moment precisely *because* the dead cannot contradict him. The moral is about exploiting situations where one cannot be challenged or refuted.
+
+Option A captures this perfectly: ""Deceivers often exploit the inability of others to challenge their falsehoods.""
+
+The other options don't fit:
+- B) discusses loyalty to friends (not present in the story)
+- C) is too vague about ""cunning words masking deception"" without the key element of exploiting vulnerability
+- D) suggests consequences for deceivers (which aren't shown)
+- E) is too generic about shared paths",,A,True,95,very_high,123,0,0,283,193,2026-01-22T18:26:56.443996
+morables_477,"A stag had grown thirsty and went to a spring in order to drink some water. When he saw the reflection of his body in the water, he disparaged the slenderness of his legs but revelled in the shape and",0,A,0,False,0,"Let me analyze this fable carefully.
+
+The stag:
+- Disparaged (looked down on) his slender legs
+- Revelled in (took pride in) his magnificent horns
+- When chased, his legs would have saved him by helping him escape
+- His horns, which he was proud of, got tangled and caused his capture and death
+
+The stag's own conclusion: ""The thing that I disparaged could have saved me while I have been destroyed by the very thing I boasted about.""
+
+Now let me evaluate each option:
+
+**A) What is most truly valuable is often underrated.**
+This fits well - the legs were underrated by the stag but proved most valuable for survival.
+
+**B) People are greedy for things which bring honour but result in destruction.**
+This is somewhat relevant but doesn't capture the core lesson as directly. The stag wasn't greedy for the horns; he simply valued them aesthetically.
+
+**C) Persistence outshines vanity.**
+This doesn't fit - persistence isn't really the theme here.
+
+**D) Vain deceivers often exploit others' inability to challenge falsehoods.**
+This doesn't apply - there's no deception or exploitation of others.
+
+**E) Pride in appearances can blind us to our true strengths.**
+This is very close and captures the essence well - the stag was blinded by pride in his appearance (horns) and failed to recognize his true strength (his legs).
+
+Between A and E: Both are strong, but E more directly addresses the mechanism of the fable - it's not just that the legs were underrated, but specifically that **pride in appearance blinded him** to recognizing his true strength. This captures both the vanity element and the blindness it caused.
+
+- Your choice: <answer>E</answer>
+- Your confidence: <confidence>82</confidence>",,E,False,82,very_high,281,1,1,386,415,2026-01-22T18:27:02.140209
+morables_694,"There was a generous Rich Man who always had a grand and open table, so he never lacked guests. This man noticed that all sorts of people came to him, and he became curious to see who were true friend",0,A,0,False,0,"Let me analyze this fable carefully.
+
+The story shows:
+1. A rich man with an open table attracts many guests
+2. He tests who his true friends are by asking for serious support (joining him in a quarrel with swords)
+3. Only 2 people agree; the rest make excuses
+4. He identifies the 2 as true friends and the rest as freeloaders
+
+Now let me evaluate each option:
+
+A) ""True friends are hard to come by"" - This fits well. The story demonstrates that among many guests, only 2 proved to be true friends.
+
+B) ""A man cannot be too careful of what he does, where the life of any creature is in question"" - This is about caution regarding life/death matters, but the fable isn't really about that moral lesson.
+
+C) ""Generosity should not enable freeloaders"" - While freeloaders are mentioned, the story doesn't condemn the man's generosity or suggest he should change his behavior.
+
+D) ""Excuse-making people adjust their loyal beliefs based on what is profitable for them"" - This captures the idea that the guests were only there for the free meals, not out of genuine friendship.
+
+E) ""Generosity attracts company, but sincerity keeps it"" - This suggests generosity alone isn't enough; true friendship requires sincerity/genuine commitment.
+
+The core message is about distinguishing true friends from those who are merely present for material benefit. Options A, D, and E all capture aspects of this, but:
+
+- **A** is the most direct and clear statement of the main lesson
+- **E** is more nuanced and captures both the attraction (generosity) and the test (sincerity)
+- **D** focuses on the negative behavior of the freeloaders
+
+Option A is the most straightforward interpretation of the fable's central message.
+
+- **Choice: A**
+- **Confidence: 78**",,A,True,78,high,294,1,0,321,429,2026-01-22T18:27:07.792885
+morables_630,"A fox was walking by a certain farm and saw a crowd of women who, in total silence, were eating many sumptuously roasted chickens. The fox turned to the women and said, 'What shouts there would be aga",0,A,0,True,0,"# Analysis of the Fable
+
+The core of this fable lies in the old woman's response to the fox. She points out the crucial distinction: the women are eating **their own chickens**, while the fox would be eating **someone else's chickens**.
+
+The fox's complaint—that it would face punishment for doing what the women do—misses this essential point about **ownership and permission**. The women have the right to eat their own property; the fox does not have the right to steal from the farm.
+
+The moral teaches us not to assume that because something is lawful for people to do with their own belongings, we are therefore permitted to do the same with other people's property.
+
+**Evaluating the options:**
+
+- **(A)** Directly captures the old woman's rebuke about the difference between eating one's own vs. others' property ✓
+- **(B)** Irrelevant—no friendship is discussed
+- **(C)** Doesn't match the content about ownership rights
+- **(D)** About malice and winking—not present in the story
+- **(E)** While silence appears, it's not the point of the moral
+
+---
+
+- Your choice: **A**
+- Your confidence: **95**","Let me analyze this fable carefully.
+
+The fox sees women eating roasted chickens in silence. The fox complains that if HE were to do what they're doing (eating chickens), there would be an uproar and dogs would howl. 
+
+The old woman's response is key: ""We are eating those things which are ours; you take your pleasure in things that belong to others.""
+
+The moral here is about the difference between what is lawful and permissible for one person versus another. The women are allowed to eat their own chickens. The fox is not allowed to steal chickens from the farm. Just because something is permitted for someone in their own house doesn't mean it's permitted for others to take those things.
+
+Let me evaluate each option:
+
+A) ""We should not conclude that we are allowed to do to other people's things what is permitted to them in their own houses."" - This directly matches the old woman's point. She's saying that just because they can eat their own chickens doesn't mean the fox can eat them.
+
+B) ""A false friend is the worst kind of enemy."" - The fox isn't presented as a friend. This doesn't fit.
+
+C) ""Silent wisdom outsmarts cunning feasts."" - This is about silence outsmarting cunning, but the story isn't really about cunning feasts.
+
+D) ""There is as much silent malice in a cunning wink as in a word."" - This is about malice and winking, which doesn't appear in the story.
+
+E) ""Silence can mask the most indulgent of feasts."" - While there is silence in the eating, this isn't the main point being made.
+
+The answer is clearly A. The fable illustrates that ownership matters - what is lawful for someone to do with their own property is not lawful for others to do with that same property.",,,95,very_high,183,0,0,333,693,2026-01-22T18:27:15.781921
+morables_225,"When a gnat had challenged a bull to see who was the stronger of the two, all the people came to watch the show. Then the little gnat said to the bull, 'It's enough for me that you have accepted my ch",0,A,0,True,0,"# Analysis
+
+Let me trace through this fable's key message:
+
+**What happens:**
+- A gnat challenges a bull to a contest
+- The bull accepts the challenge
+- By accepting, the bull inadvertently elevates the gnat to equal status
+- The gnat exploits this to boast and gain credibility
+
+**The stated moral in the conclusion:**
+""If the bull had been mindful of his own mighty bulk, he would have dismissed this opponent as beneath contempt and the impertinent creature would not have had anything to boast about.""
+
+This explicitly tells us that the bull's mistake was **engaging with an unworthy opponent**, which paradoxically gave that opponent standing and credibility.
+
+**Evaluating the options:**
+- A) Directly matches the stated moral - accepting a challenge from an unworthy opponent lowers the bull's reputation ✓
+- B) Irrelevant - nothing about education or children
+- C) The gnat shows pride, not the bull; the bull's issue is judgment, not pride
+- D) Doesn't align with the narrative
+- E) While there are futile elements, the core issue is engaging with unworthy opponents, not pride leading to contests
+
+---
+
+**Your choice:** <answer>A</answer>
+
+**Confidence:** <confidence>96</confidence>
+
+The fable's conclusion explicitly supports this interpretation - the problem is that the bull legitimized an unworthy challenger by accepting the contest.","Let me analyze this fable carefully.
+
+The key elements of the story:
+1. A gnat challenges a bull to a contest
+2. The bull accepts the challenge
+3. The gnat claims that by accepting, the bull has made them equals
+4. The gnat shows off while the bull threatens
+5. The moral stated in the fable: ""If the bull had been mindful of his own mighty bulk, he would have dismissed this opponent as beneath contempt and the impertinent creature would not have had anything to boast about.""
+
+The fable explicitly tells us the moral in its final sentence. The moral is that the bull, by not recognizing his own superior strength and dismissing the gnat as unworthy, actually gave the gnat a platform to boast and claim equality.
+
+Let me evaluate each option:
+
+A) ""People who enter into contests with unworthy opponents lower their own reputation.""
+- This directly aligns with the fable's stated moral. By accepting the challenge from an unworthy opponent, the bull lowered his own standing and gave the gnat credibility.
+
+B) ""Educate your children in those arts which are capable of preserving them from want.""
+- This doesn't relate to the fable at all. There's nothing about education or preventing poverty.
+
+C) ""Pride invites downfall.""
+- The bull's downfall isn't really from pride; it's from engaging with an unworthy opponent. The gnat is the boastful one (with pride), not the bull.
+
+D) ""Return boastful favors and mighty favors will be bestowed on you.""
+- This doesn't match the fable's message.
+
+E) ""Pride can lead to futile contests.""
+- The contest isn't so much futile; rather, the problem is that the bull engaged in it at all. It's more about engaging with unworthy opponents than about futile contests due to pride.
+
+The answer is clearly A. The fable explicitly states that the bull should have dismissed the gnat as unworthy, and by not doing so, he elevated the gnat's status. This is exactly what option A expresses - entering contests with unworthy opponents lowers one's own reputation.
+
+
+I'm very confident in this answer - probably 95-98% certain.",A,True,96,very_high,212,0,1,346,828,2026-01-22T18:27:24.557374
+morables_380,"A fox and a monkey were travelling along the same road. They passed through a cemetery, and the monkey said to the fox, 'All these dead people were the freedmen of my ancestors.' The fox then said to ",0,A,0,True,0,"# Analysis of the Fable's Moral
+
+The key moment in this fable is the fox's response to the monkey's false claim. The fox explicitly identifies **why** the monkey is able to make such an outrageous lie: because the dead people cannot refute him.
+
+Let me evaluate the options:
+
+**A) Deceivers often exploit the inability of others to challenge their falsehoods.**
+- This directly captures the fox's insight. The fox points out that the monkey's lie succeeds precisely because those who could contradict him (the dead) are unable to do so. ✓
+
+**B) Do not neglect the loyalty of old friends...**
+- No relevance to the story. There's no mention of friends or loyalty.
+
+**C) Cunning words often mask deception.**
+- The story isn't about disguised cunning—it's about the monkey being brazenly dishonest.
+
+**D) Deceivers find themselves in deep water...**
+- The story doesn't show consequences to the monkey; the fox simply exposes his opportunism.
+
+**E) Shared paths can reveal true intentions.**
+- The path itself isn't relevant; it's the fox's recognition of exploitation.
+
+---
+
+- **Your choice: A**
+- **Confidence: 95**
+
+The fable teaches that people are most likely to deceive when they believe they cannot be contradicted or held accountable—a timeless warning about exploiting power imbalances.","Let me analyze this fable carefully.
+
+The story shows:
+1. A monkey makes a false claim about the dead people being freedmen of his ancestors
+2. The fox immediately recognizes this as a lie
+3. The fox's response points out that the monkey is taking advantage of the fact that the dead cannot refute his claim
+
+The key insight from the fox is: the monkey is lying because no one can challenge or contradict him. The dead people obviously cannot speak up to deny his claim.
+
+This is a commentary on deception - the monkey is exploiting a situation where his falsehood cannot be contradicted.
+
+Let me evaluate each option:
+
+A) ""Deceivers often exploit the inability of others to challenge their falsehoods.""
+This directly matches the moral. The fox points out that the monkey is lying precisely because the dead cannot refute him. This is exactly what the story illustrates.
+
+B) ""Do not neglect the loyalty of old friends to please new acquaintances.""
+This doesn't relate to the story at all. There's no mention of friends or acquaintances.
+
+C) ""Cunning words often mask deception.""
+While there is deception, the story isn't really about cunning words masking deception - it's about exploiting the inability to be contradicted.
+
+D) ""Those who pretend to be cunning and deceptive, sooner or later, find themselves in deep water.""
+The monkey faces consequences, but we don't see that in the story. The fox simply calls him out, but there's no indication of deep water or serious consequences.
+
+E) ""Shared paths can reveal true intentions.""
+The path isn't what reveals anything - it's the fox's ability to recognize the lie.
+
+The clearest answer is A. The moral is that deceivers exploit situations where they cannot be contradicted or refuted. The fox explicitly points out that the monkey is taking advantage of the fact that the dead cannot rise up and refute his claim.",A,True,95,very_high,207,0,2,312,762,2026-01-22T18:27:32.492846
+morables_477,"A stag had grown thirsty and went to a spring in order to drink some water. When he saw the reflection of his body in the water, he disparaged the slenderness of his legs but revelled in the shape and",0,A,0,True,0,"**Your choice: A**
+
+**Confidence: 75**
+
+**Reasoning:**
+
+The core message of this fable is that the stag's judgment of value was completely inverted. He disparaged his legs—which turned out to be his only means of survival—while taking pride in his horns, which ultimately caused his capture and death.
+
+The stag explicitly states this moral himself: ""The thing that I disparaged could have saved me while I have been destroyed by the very thing I boasted about.""
+
+Option A captures this perfectly: **What is most truly valuable is often underrated.** The legs, which seemed unremarkable to the vain stag, possessed genuine survival value. The horns, which he admired, had none.
+
+While option E (""Pride in appearances can blind us to our true strengths"") is also thematically present and well-constructed, it focuses more on the *mechanism* (how pride causes blindness) rather than the *realization* the fable emphasizes—that true value is often underappreciated.
+
+Options B, C, and D don't align with the story's key lesson.","Let me analyze this fable carefully.
+
+The story shows:
+1. A stag admires his horns but disparages (looks down on) his slender legs
+2. When hunters chase him, his legs would have saved him - they let him outrun the hunters on level ground and reach the marsh
+3. But his horns (which he was proud of) get tangled in branches and cause his capture
+4. The moral message the stag gives: ""The thing that I disparaged could have saved me while I have been destroyed by the very thing I boasted about.""
+
+Now let me examine each option:
+
+A) ""What is most truly valuable is often underrated.""
+- This matches well. The legs, which the stag underrated, were actually most valuable for survival. The horns, which he overrated, were worthless.
+
+B) ""It is often the case that people are greedy for things which they think will bring them honour, but which only result in their death and destruction.""
+- This is partially true but doesn't fully capture it. The issue isn't really greed for honor, but rather vanity and misjudgment of value.
+
+C) ""Persistence outshines vanity.""
+- This is somewhat present but doesn't capture the core message about what's valuable.
+
+D) ""Vain deceivers often exploit the persistent inability of others to challenge their falsehoods.""
+- This doesn't fit the story at all. There's no deception or exploitation happening.
+
+E) ""Pride in appearances can blind us to our true strengths.""
+- This is also very strong. The stag was proud of his horns (appearance) and this blinded him to the true value of his legs (his real strength in escaping danger).
+
+Between A and E:
+- A emphasizes that what is underrated is most valuable
+- E emphasizes that pride in appearances blinds us to true strengths
+
+The stag's own words support both, but the emphasis seems to be on the false valuation - he disparaged what was actually valuable and prized what was actually useless. 
+
+The stag's realization centers on this mismatch between perceived and actual value. Option A directly addresses this core insight—that truly valuable things get overlooked while worthless ones get celebrated. Option E focuses on the psychological mechanism (pride obscuring judgment) rather than the fundamental lesson about value itself. The fable's central point is the stark reversal of what should have been valued, making A the stronger answer.",A,True,75,high,161,0,1,415,891,2026-01-22T18:27:42.534417
+morables_694,"There was a generous Rich Man who always had a grand and open table, so he never lacked guests. This man noticed that all sorts of people came to him, and he became curious to see who were true friend",0,A,0,True,0,"# Analysis
+
+The fable demonstrates a clear narrative arc:
+1. A generous man with many guests wonders who are true friends
+2. He tests them with a serious request (asking them to support him in a quarrel with swords)
+3. Only 2 people accept; the rest make excuses
+4. The conclusion: most are just hangers-on; only 2 are true friends
+
+Let me evaluate the options:
+
+- **A) True friends are hard to come by** - This directly captures the main lesson. Despite hosting many people, only 2 of them proved to be genuine friends when truly tested.
+
+- **B)** - Irrelevant; the fable isn't about caution regarding life and death matters.
+
+- **C)** - While freeloaders are present, the moral isn't about controlling generosity; it's about understanding friendship.
+
+- **D)** - Describes the behavior of the false friends but misses the central point about true friendship being rare.
+
+- **E)** - Poetic but overstates the lesson. The fable isn't celebrating that ""sincerity keeps"" company; rather, it reveals that most companions won't stay loyal when tested.
+
+The fable's core message is the rarity of genuine friendship among many superficial relationships.
+
+---
+
+- Your choice: **<answer>A</answer>**
+- Your confidence: **<confidence>92</confidence>**","Let me analyze this fable carefully.
+
+The story shows:
+1. A Rich Man is generous and has an open table with many guests
+2. He becomes curious about who are true friends vs. freeloaders
+3. He tests them by mentioning a quarrel and asking people to stand by him with swords
+4. Only 2 people agree; everyone else makes excuses
+5. The 2 who agreed are counted as his true friends; the rest are hangers-on
+
+Now let me evaluate each option:
+
+A) ""True friends are hard to come by."" - This is clearly demonstrated. Despite having many guests at his table, only 2 out of many turned out to be true friends. This is the central lesson.
+
+B) ""A man cannot be too careful of what he does, where the life of any creature is in question."" - This doesn't match the story. The fable isn't about being careful regarding life and death; it's about discerning true friendship.
+
+C) ""Generosity should not enable freeloaders."" - While the story does show freeloaders taking advantage of generosity, this isn't really the moral lesson being taught. The moral isn't cautioning against generosity enabling freeloaders; rather, it's observing that generosity attracts both true friends and false ones.
+
+D) ""Excuse-making people adjust their loyal beliefs based on what is profitable for them."" - This is somewhat related but is focused on the negative behavior of the freeloaders. It's describing what happened rather than the main moral lesson.
+
+E) ""Generosity attracts company, but sincerity keeps it."" - This is interesting. Generosity brought people to his table (company), and sincerity (the test/truth) revealed who stayed loyal. This captures both the setup and the revelation.
+
+The central point of the fable seems to be: True friends are hard to find, even among many companions. When tested with something serious (danger/sacrifice), most people reveal themselves to be self-interested rather than loyal.
+
+Between A and E:
+
+
+A directly captures the core moral—genuine friendship is rare. E offers a more nuanced view about what attracts versus what sustains relationships, but the fable's primary focus is on the scarcity of true friends when put to the test. A is the most straightforward and accurate reflection of the lesson.",A,True,92,very_high,198,1,0,350,844,2026-01-22T18:27:52.157940
