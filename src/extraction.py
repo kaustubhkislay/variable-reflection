@@ -7,6 +7,7 @@ from typing import Optional
 def extract_ethics_answer(response: str) -> Optional[str]:
     """
     Extract wrong/not wrong from ETHICS response.
+    Handles both tagged (<answer>) and untagged formats.
 
     Returns:
         "wrong", "not wrong", or None if extraction failed
@@ -20,7 +21,12 @@ def extract_ethics_answer(response: str) -> Optional[str]:
     if text in ["wrong", "not wrong"]:
         return text
 
-    # Look for "Final answer:" pattern (highest priority)
+    # HIGHEST PRIORITY: Answer tags (most reliable)
+    tag_match = re.search(r'<answer>\s*(not wrong|wrong)\s*</answer>', text, re.IGNORECASE)
+    if tag_match:
+        return tag_match.group(1).lower()
+
+    # Look for "Final answer:" pattern (high priority)
     final_patterns = [
         r'final answer[:\s]*["\']?(not wrong|wrong)["\']?',
         r'final answer[:\s]*\**(not wrong|wrong)\**',
@@ -75,6 +81,27 @@ def extract_ethics_answer(response: str) -> Optional[str]:
         return "wrong"
 
     return None
+
+
+def extract_ethics_with_confidence(response: str) -> dict:
+    """
+    Extract both answer (wrong/not wrong) and confidence (0-100) from ETHICS response.
+
+    Returns:
+        Dictionary with:
+        - 'answer': "wrong", "not wrong", or None
+        - 'confidence': 0-100 integer, or None
+        - 'confidence_category': "very_low", "low", "moderate", "high", "very_high", or None
+    """
+    answer = extract_ethics_answer(response)
+    confidence = extract_confidence_score(response)
+    category = categorize_confidence(confidence)
+
+    return {
+        'answer': answer,
+        'confidence': confidence,
+        'confidence_category': category
+    }
 
 
 def extract_moralchoice_answer(response: str) -> Optional[str]:
@@ -146,6 +173,99 @@ def extract_moralchoice_answer(response: str) -> Optional[str]:
         return choice_indicators[-1].group(1).upper()
 
     return None
+
+
+def extract_morables_answer(response: str) -> Optional[str]:
+    """
+    Extract A/B/C/D/E from MORABLES response.
+
+    Returns:
+        "A", "B", "C", "D", "E", or None if extraction failed
+    """
+    if response is None:
+        return None
+
+    text = response.strip()
+    valid_answers = {"A", "B", "C", "D", "E"}
+
+    # Direct match (Level 0)
+    if text.upper() in valid_answers:
+        return text.upper()
+
+    # HIGHEST PRIORITY: Answer tags (most reliable)
+    tag_match = re.search(r'<answer>\s*([A-E])\s*</answer>', text, re.IGNORECASE)
+    if tag_match:
+        return tag_match.group(1).upper()
+
+    # HIGH PRIORITY: Bold letter at start of response (common pattern)
+    start_bold_match = re.match(r'^\s*\*\*([A-E])\*\*', text, re.IGNORECASE)
+    if start_bold_match:
+        return start_bold_match.group(1).upper()
+
+    # High priority: "Final answer:" patterns
+    final_patterns = [
+        r'final answer[:\s]*["\']?\**([A-E])\**["\']?',
+        r'\*\*final answer[:\s]*([A-E])\*\*',
+        r'final answer[:\s]*(?:option\s*)?([A-E])',
+    ]
+    for pattern in final_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match and match.group(1).upper() in valid_answers:
+            return match.group(1).upper()
+
+    # Medium priority: explicit choice patterns
+    choice_patterns = [
+        r'(?:I )?(?:choose|select|pick|go with)[:\s]*(?:option\s*)?["\']?([A-E])["\']?',
+        r'(?:my )?(?:answer|choice)[:\s]*["\']?([A-E])["\']?',
+        r'(?:the )?(?:moral|answer|correct option)\s*(?:is|seems to be)[:\s]*(?:option\s*)?([A-E])',
+        r'(?:option\s+)?([A-E])\s*(?:is|captures|represents)\s*(?:the)?\s*(?:correct|best|true)',
+        r'(?:therefore|thus|hence)[,\s]*(?:option\s*)?([A-E])',
+        r'\b([A-E])\s*is\s*(?:the\s*)?(?:correct|best|right)\s*(?:answer|choice|moral)',
+    ]
+
+    for pattern in choice_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match and match.group(1).upper() in valid_answers:
+            return match.group(1).upper()
+
+    # Check last 3 lines for answer
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    for line in reversed(lines[-3:] if len(lines) >= 3 else lines):
+        # Skip markdown headers
+        if line.startswith('#'):
+            continue
+        # Look for standalone letter or "Option X"
+        line_match = re.search(r'(?:option\s*)?([A-E])\s*[.!]?\s*$', line, re.IGNORECASE)
+        if line_match:
+            return line_match.group(1).upper()
+
+    # Last resort: find the last standalone A-E that appears to be a choice indicator
+    choice_indicators = list(re.finditer(r'(?:^|\s|:)([A-E])(?:\s*[.!,)]|\s*$)', text, re.IGNORECASE))
+    if choice_indicators:
+        return choice_indicators[-1].group(1).upper()
+
+    return None
+
+
+def extract_morables_with_confidence(response: str) -> dict:
+    """
+    Extract both answer (A-E) and confidence (0-100) from MORABLES response.
+
+    Returns:
+        Dictionary with:
+        - 'answer': "A", "B", "C", "D", "E", or None
+        - 'confidence': 0-100 integer, or None
+        - 'confidence_category': "very_low", "low", "moderate", "high", "very_high", or None
+    """
+    answer = extract_morables_answer(response)
+    confidence = extract_confidence_score(response)
+    category = categorize_confidence(confidence)
+
+    return {
+        'answer': answer,
+        'confidence': confidence,
+        'confidence_category': category
+    }
 
 
 def extract_confidence_score(response: str) -> Optional[int]:
@@ -274,3 +394,49 @@ def count_uncertainty_markers(text: str) -> int:
 
     text_lower = text.lower()
     return sum(1 for marker in markers if marker in text_lower)
+
+
+# =============================================================================
+# UNIFIED EXTRACTION FUNCTIONS
+# =============================================================================
+
+def extract_with_confidence(response: str, benchmark: str) -> dict:
+    """
+    Unified extraction for any benchmark.
+
+    Args:
+        response: Model response text
+        benchmark: "ethics", "moralchoice", or "morables"
+
+    Returns:
+        Dictionary with answer, confidence, and confidence_category
+    """
+    if benchmark == "ethics":
+        return extract_ethics_with_confidence(response)
+    elif benchmark == "moralchoice":
+        return extract_moralchoice_with_confidence(response)
+    elif benchmark == "morables":
+        return extract_morables_with_confidence(response)
+    else:
+        raise ValueError(f"Unknown benchmark: {benchmark}")
+
+
+def extract_answer(response: str, benchmark: str) -> Optional[str]:
+    """
+    Unified answer extraction for any benchmark.
+
+    Args:
+        response: Model response text
+        benchmark: "ethics", "moralchoice", or "morables"
+
+    Returns:
+        Extracted answer string or None
+    """
+    if benchmark == "ethics":
+        return extract_ethics_answer(response)
+    elif benchmark == "moralchoice":
+        return extract_moralchoice_answer(response)
+    elif benchmark == "morables":
+        return extract_morables_answer(response)
+    else:
+        raise ValueError(f"Unknown benchmark: {benchmark}")

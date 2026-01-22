@@ -21,7 +21,10 @@ from prompts import get_ethics_prompt, get_moralchoice_prompt
 from src.api import call_with_rate_limit, APIResponse
 from src.extraction import (
     extract_ethics_answer,
+    extract_ethics_with_confidence,
     extract_moralchoice_with_confidence,
+    extract_confidence_score,
+    categorize_confidence,
     count_reasoning_markers,
     count_uncertainty_markers
 )
@@ -36,15 +39,24 @@ N_RUNS = config.N_RUNS
 SAMPLE_SIZE = 100
 
 
-def run_single_item_ethics(row, level, thinking):
-    """Run single ETHICS item at given condition."""
+def run_single_item_ethics(row, level, thinking, include_confidence=True):
+    """Run single ETHICS item at given condition.
+
+    Args:
+        row: DataFrame row with scenario and label
+        level: Reflection level (0-5)
+        thinking: Whether to enable extended thinking
+        include_confidence: Whether to ask for confidence score
+    """
 
     if level == 5:
         # Two-pass
-        prompt1 = get_ethics_prompt(5, row['scenario'])
+        prompt1 = get_ethics_prompt(5, row['scenario'],
+                                     include_confidence=include_confidence)
         response1 = call_with_rate_limit(prompt1, thinking)
 
-        prompt2 = get_ethics_prompt(5, row['scenario'], response1.content)
+        prompt2 = get_ethics_prompt(5, row['scenario'], response1.content,
+                                     include_confidence=include_confidence)
         response2 = call_with_rate_limit(prompt2, thinking)
 
         return {
@@ -55,7 +67,8 @@ def run_single_item_ethics(row, level, thinking):
             'output_tokens': response1.output_tokens + response2.output_tokens,
         }
     else:
-        prompt = get_ethics_prompt(level, row['scenario'])
+        prompt = get_ethics_prompt(level, row['scenario'],
+                                    include_confidence=include_confidence)
         response = call_with_rate_limit(prompt, thinking)
 
         return {
@@ -143,9 +156,11 @@ def run_ethics_experiment():
                                    desc=f"R{run+1}-L{level}-{thinking_label}"):
 
                     try:
-                        response_data = run_single_item_ethics(row, level, thinking)
+                        response_data = run_single_item_ethics(row, level, thinking,
+                                                                include_confidence=True)
 
                         extracted = extract_ethics_answer(response_data['content'])
+                        confidence = extract_confidence_score(response_data['content'])
 
                         results.append({
                             'item_id': row['item_id'],
@@ -159,6 +174,8 @@ def run_ethics_experiment():
                             'thinking_content': response_data['thinking'],
                             'extracted_answer': extracted,
                             'correct': extracted == row['label'] if extracted else None,
+                            'confidence': confidence,
+                            'confidence_category': categorize_confidence(confidence),
                             'response_length': len(response_data['full_response'].split()),
                             'reasoning_markers': count_reasoning_markers(response_data['full_response']),
                             'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),

@@ -445,3 +445,264 @@ def create_all_figures(ethics_results, mc_results, consistency_df, output_dir='o
     print("  - token_usage.png")
 
     print(f"\nAll figures saved to {output_dir}/")
+
+
+# =============================================================================
+# CONFIDENCE VISUALIZATION FUNCTIONS
+# =============================================================================
+
+def plot_confidence_by_condition(results, benchmark_name='Benchmark', save_path=None):
+    """Plot confidence by prompt level and thinking condition."""
+
+    if 'confidence' not in results.columns:
+        print(f"No confidence data for {benchmark_name}")
+        return None
+
+    valid = results[results['confidence'].notna()]
+    if len(valid) == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for thinking in [False, True]:
+        label = 'Thinking ON' if thinking else 'Thinking OFF'
+        color = COLORS['ON'] if thinking else COLORS['OFF']
+
+        subset = valid[valid['thinking'] == thinking]
+        means = subset.groupby('level')['confidence'].mean()
+        sems = subset.groupby('level')['confidence'].sem()
+
+        ax.errorbar(
+            means.index, means.values,
+            yerr=1.96 * sems.values,
+            label=label, color=color,
+            marker='o', markersize=8, linewidth=2, capsize=5
+        )
+
+    ax.set_xlabel('Prompt Level', fontsize=12)
+    ax.set_ylabel('Confidence (0-100)', fontsize=12)
+    ax.set_title(f'{benchmark_name} Confidence by Condition', fontsize=14)
+    ax.set_xticks(range(6))
+    ax.set_xticklabels(LEVEL_LABELS)
+    ax.legend(loc='best')
+    ax.set_ylim(0, 100)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    return fig
+
+
+def plot_confidence_boxplot(results, benchmark_name='Benchmark', save_path=None):
+    """Box plot of confidence scores by level and thinking condition."""
+
+    if 'confidence' not in results.columns:
+        return None
+
+    valid = results[results['confidence'].notna()].copy()
+    if len(valid) == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Create condition label
+    valid['condition'] = valid.apply(
+        lambda x: f"L{x['level']}-{'T' if x['thinking'] else 'N'}", axis=1
+    )
+
+    sns.boxplot(data=valid, x='level', y='confidence', hue='thinking', ax=ax,
+                palette={False: COLORS['OFF'], True: COLORS['ON']})
+
+    ax.set_xlabel('Prompt Level', fontsize=12)
+    ax.set_ylabel('Confidence (0-100)', fontsize=12)
+    ax.set_title(f'{benchmark_name} Confidence Distribution', fontsize=14)
+    ax.legend(title='Thinking', labels=['OFF', 'ON'])
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    return fig
+
+
+def plot_confidence_calibration(results, benchmark_name='Benchmark', save_path=None):
+    """
+    Plot calibration curve: confidence vs actual accuracy.
+
+    Perfect calibration = diagonal line.
+    """
+    if 'confidence' not in results.columns or 'correct' not in results.columns:
+        return None
+
+    valid = results[results['confidence'].notna() & results['correct'].notna()].copy()
+    if len(valid) < 10:
+        return None
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Bin confidence scores
+    bins = [0, 20, 40, 60, 80, 100]
+    bin_centers = [10, 30, 50, 70, 90]
+    labels = ['0-20', '21-40', '41-60', '61-80', '81-100']
+    valid['confidence_bin'] = pd.cut(valid['confidence'], bins=bins, labels=labels)
+
+    for idx, thinking in enumerate([False, True]):
+        ax = axes[idx]
+        subset = valid[valid['thinking'] == thinking]
+
+        # Group by level and confidence bin
+        for level in sorted(subset['level'].unique()):
+            level_data = subset[subset['level'] == level]
+            cal_data = level_data.groupby('confidence_bin').agg(
+                accuracy=('correct', 'mean'),
+                n=('correct', 'count')
+            ).reset_index()
+
+            # Map bin labels to centers
+            bin_to_center = dict(zip(labels, bin_centers))
+            cal_data['bin_center'] = cal_data['confidence_bin'].map(bin_to_center)
+
+            # Only plot points with enough data
+            cal_data = cal_data[cal_data['n'] >= 5]
+
+            if len(cal_data) > 0:
+                ax.plot(cal_data['bin_center'], cal_data['accuracy'],
+                       marker='o', label=f'Level {level}', alpha=0.7)
+
+        # Perfect calibration line
+        ax.plot([0, 100], [0, 1], 'k--', alpha=0.3, label='Perfect calibration')
+
+        ax.set_xlabel('Mean Confidence', fontsize=12)
+        ax.set_ylabel('Accuracy', fontsize=12)
+        ax.set_title(f'{benchmark_name} - Thinking {"ON" if thinking else "OFF"}', fontsize=12)
+        ax.legend(loc='lower right', fontsize=8)
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 1)
+
+    plt.suptitle(f'{benchmark_name} Confidence Calibration', fontsize=14, y=1.02)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    return fig
+
+
+def plot_confidence_by_correctness(results, benchmark_name='Benchmark', save_path=None):
+    """Plot confidence distributions for correct vs incorrect answers."""
+
+    if 'confidence' not in results.columns or 'correct' not in results.columns:
+        return None
+
+    valid = results[results['confidence'].notna() & results['correct'].notna()].copy()
+    if len(valid) < 10:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Calculate mean confidence for correct vs incorrect by level
+    summary = valid.groupby(['level', 'correct'])['confidence'].mean().unstack()
+
+    x = np.arange(6)
+    width = 0.35
+
+    if True in summary.columns:
+        ax.bar(x - width/2, summary[True], width, label='Correct', color='#2ecc71', alpha=0.8)
+    if False in summary.columns:
+        ax.bar(x + width/2, summary[False], width, label='Incorrect', color='#e74c3c', alpha=0.8)
+
+    ax.set_xlabel('Prompt Level', fontsize=12)
+    ax.set_ylabel('Mean Confidence', fontsize=12)
+    ax.set_title(f'{benchmark_name} Confidence by Correctness', fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(LEVEL_LABELS)
+    ax.legend()
+    ax.set_ylim(0, 100)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    return fig
+
+
+def plot_confidence_heatmap(results, benchmark_name='Benchmark', save_path=None):
+    """Heatmap of confidence by level and thinking."""
+
+    if 'confidence' not in results.columns:
+        return None
+
+    valid = results[results['confidence'].notna()]
+    if len(valid) == 0:
+        return None
+
+    pivot = valid.groupby(['level', 'thinking'])['confidence'].mean().reset_index()
+    pivot['thinking'] = pivot['thinking'].map({False: 'OFF', True: 'ON'})
+    heatmap_data = pivot.pivot(index='level', columns='thinking', values='confidence')
+
+    fig, ax = plt.subplots(figsize=(6, 8))
+
+    sns.heatmap(
+        heatmap_data, annot=True, fmt='.1f', cmap='YlOrRd',
+        vmin=0, vmax=100, ax=ax, cbar_kws={'label': 'Confidence'}
+    )
+
+    ax.set_xlabel('Extended Thinking', fontsize=12)
+    ax.set_ylabel('Prompt Level', fontsize=12)
+    ax.set_title(f'{benchmark_name} Confidence Heatmap', fontsize=14)
+    ax.set_yticklabels(['0 (Direct)', '1 (Minimal)', '2 (CoT)',
+                        '3 (Structured)', '4 (Adversarial)', '5 (Two-Pass)'],
+                       rotation=0)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    return fig
+
+
+def create_confidence_figures(results, benchmark_name, output_dir='outputs/figures'):
+    """Generate and save all confidence-related figures for a benchmark."""
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    prefix = benchmark_name.lower().replace(' ', '_')
+
+    print(f"\nGenerating confidence figures for {benchmark_name}...")
+
+    fig = plot_confidence_by_condition(results, benchmark_name,
+                                        f"{output_dir}/{prefix}_confidence_by_condition.png")
+    if fig:
+        print(f"  - {prefix}_confidence_by_condition.png")
+
+    fig = plot_confidence_boxplot(results, benchmark_name,
+                                   f"{output_dir}/{prefix}_confidence_boxplot.png")
+    if fig:
+        print(f"  - {prefix}_confidence_boxplot.png")
+
+    fig = plot_confidence_heatmap(results, benchmark_name,
+                                   f"{output_dir}/{prefix}_confidence_heatmap.png")
+    if fig:
+        print(f"  - {prefix}_confidence_heatmap.png")
+
+    # Only for benchmarks with ground truth
+    if 'correct' in results.columns:
+        fig = plot_confidence_calibration(results, benchmark_name,
+                                           f"{output_dir}/{prefix}_confidence_calibration.png")
+        if fig:
+            print(f"  - {prefix}_confidence_calibration.png")
+
+        fig = plot_confidence_by_correctness(results, benchmark_name,
+                                              f"{output_dir}/{prefix}_confidence_by_correctness.png")
+        if fig:
+            print(f"  - {prefix}_confidence_by_correctness.png")
