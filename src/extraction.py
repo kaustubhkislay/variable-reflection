@@ -93,6 +93,16 @@ def extract_moralchoice_answer(response: str) -> Optional[str]:
     if text.upper() in ["A", "B"]:
         return text.upper()
 
+    # HIGHEST PRIORITY: Answer tags (most reliable)
+    tag_match = re.search(r'<answer>\s*([AB])\s*</answer>', text, re.IGNORECASE)
+    if tag_match:
+        return tag_match.group(1).upper()
+
+    # HIGH PRIORITY: Bold letter at start of response (common pattern)
+    start_bold_match = re.match(r'^\s*\*\*([AB])\*\*', text, re.IGNORECASE)
+    if start_bold_match:
+        return start_bold_match.group(1).upper()
+
     # High priority: "Final answer:" patterns
     final_patterns = [
         r'final (?:answer|choice)[:\s]*["\']?\**([AB])\**["\']?',
