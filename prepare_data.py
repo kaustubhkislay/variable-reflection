@@ -102,10 +102,10 @@ def load_morables_data():
     """Load MORABLES dataset from HuggingFace."""
 
     print("Loading MORABLES dataset from HuggingFace...")
-    print("  Source: cardiffnlp/Morables")
+    print("  Source: cardiffnlp/Morables (mcqa config)")
 
-    # Load dataset
-    dataset = load_dataset("cardiffnlp/Morables")
+    # Load dataset with mcqa config (5-way multiple choice)
+    dataset = load_dataset("cardiffnlp/Morables", "mcqa")
 
     # Get the test split (or train if test not available)
     if 'test' in dataset:
@@ -136,13 +136,15 @@ def prepare_morables_data(df: pd.DataFrame) -> pd.DataFrame:
     print("\nPreparing MORABLES data...")
 
     # Standardize column names based on actual dataset structure
+    # cardiffnlp/Morables mcqa config uses:
+    #   story -> fable, choices -> options, correct_moral_label -> correct_idx
     column_mapping = {
         'story': 'fable',
         'text': 'fable',
         'fable_text': 'fable',
         'narrative': 'fable',
         'moral': 'correct_moral',
-        'correct_moral': 'correct_moral',
+        'correct_moral_label': 'correct_idx',
         'label': 'correct_idx',
         'answer': 'correct_idx',
         'correct_answer': 'correct_idx',
