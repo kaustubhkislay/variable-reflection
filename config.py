@@ -17,8 +17,8 @@ RAW_DIR = "results/raw"
 PROCESSED_DIR = "results/processed"
 
 # Experiment Settings
-N_RUNS = 3
-RANDOM_SEED = 42
+N_RUNS = 1
+RANDOM_SEED = 67
 
 # Rate Limiting
 CALLS_PER_MINUTE = 50  # Adjust based on your API tier
