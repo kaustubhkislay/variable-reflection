@@ -55,7 +55,8 @@ def plot_accuracy_heatmap(results, save_path=None):
 
     pivot = results.groupby(['level', 'thinking'])['correct'].mean().reset_index()
     pivot['thinking'] = pivot['thinking'].map({False: 'OFF', True: 'ON'})
-    heatmap_data = pivot.pivot(index='level', columns='thinking', values='correct')
+    pivot['correct'] = pivot['correct'].astype(float)
+    heatmap_data = pivot.pivot(index='level', columns='thinking', values='correct').astype(float)
 
     fig, ax = plt.subplots(figsize=(6, 8))
 
