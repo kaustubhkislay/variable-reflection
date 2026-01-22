@@ -21,7 +21,7 @@ from prompts import get_ethics_prompt, get_moralchoice_prompt
 from src.api import call_with_rate_limit, APIResponse
 from src.extraction import (
     extract_ethics_answer,
-    extract_moralchoice_answer,
+    extract_moralchoice_with_confidence,
     count_reasoning_markers,
     count_uncertainty_markers
 )
@@ -67,15 +67,28 @@ def run_single_item_ethics(row, level, thinking):
         }
 
 
-def run_single_item_moralchoice(row, level, thinking):
-    """Run single MoralChoice item at given condition."""
+def run_single_item_moralchoice(row, level, thinking, include_confidence=True):
+    """Run single MoralChoice item at given condition.
+
+    Args:
+        row: DataFrame row with context, option_a, option_b
+        level: Reflection level (0-5)
+        thinking: Whether to enable extended thinking
+        include_confidence: If True, prompt asks for both answer and confidence
+
+    Returns:
+        Dict with content, thinking, full_response, input_tokens, output_tokens
+    """
+    context = row.get('context', '')
 
     if level == 5:
-        prompt1 = get_moralchoice_prompt(5, row['context'], row['option_a'], row['option_b'])
+        prompt1 = get_moralchoice_prompt(5, context, row['option_a'], row['option_b'],
+                                         include_confidence=include_confidence)
         response1 = call_with_rate_limit(prompt1, thinking)
 
-        prompt2 = get_moralchoice_prompt(5, row['context'], row['option_a'], row['option_b'],
-                                         response1.content)
+        prompt2 = get_moralchoice_prompt(5, context, row['option_a'], row['option_b'],
+                                         previous_response=response1.content,
+                                         include_confidence=include_confidence)
         response2 = call_with_rate_limit(prompt2, thinking)
 
         return {
@@ -86,7 +99,8 @@ def run_single_item_moralchoice(row, level, thinking):
             'output_tokens': response1.output_tokens + response2.output_tokens,
         }
     else:
-        prompt = get_moralchoice_prompt(level, row['context'], row['option_a'], row['option_b'])
+        prompt = get_moralchoice_prompt(level, context, row['option_a'], row['option_b'],
+                                        include_confidence=include_confidence)
         response = call_with_rate_limit(prompt, thinking)
 
         return {
@@ -172,8 +186,12 @@ def run_ethics_experiment():
     return pd.DataFrame(results)
 
 
-def run_moralchoice_experiment():
-    """Run full MoralChoice experiment."""
+def run_moralchoice_experiment(include_confidence=True):
+    """Run full MoralChoice experiment.
+
+    Args:
+        include_confidence: If True, prompts ask for both answer and confidence
+    """
 
     mc = pd.read_csv("data/moralchoice_sample.csv")
     if SAMPLE_SIZE:
@@ -201,9 +219,11 @@ def run_moralchoice_experiment():
                                    desc=f"R{run+1}-L{level}-{thinking_label}"):
 
                     try:
-                        response_data = run_single_item_moralchoice(row, level, thinking)
+                        response_data = run_single_item_moralchoice(row, level, thinking,
+                                                                     include_confidence=include_confidence)
 
-                        extracted = extract_moralchoice_answer(response_data['content'])
+                        # Extract both answer and confidence
+                        extraction = extract_moralchoice_with_confidence(response_data['content'])
 
                         results.append({
                             'item_id': row['item_id'],
@@ -216,7 +236,9 @@ def run_moralchoice_experiment():
                             'run': run,
                             'response': response_data['full_response'],
                             'thinking_content': response_data['thinking'],
-                            'extracted_answer': extracted,
+                            'extracted_answer': extraction['answer'],
+                            'confidence': extraction['confidence'],
+                            'confidence_category': extraction['confidence_category'],
                             'response_length': len(response_data['full_response'].split()),
                             'reasoning_markers': count_reasoning_markers(response_data['full_response']),
                             'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
