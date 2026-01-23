@@ -520,9 +520,33 @@ def run_morables_experiment(sample_size=None, include_confidence=True):
 # ASYNC EXPERIMENT RUNNERS
 # =============================================================================
 
-async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True):
+def load_completed_from_checkpoint(checkpoint_path: str) -> set:
+    """Load completed (item_id, level, thinking, run) tuples from checkpoint."""
+    if not Path(checkpoint_path).exists():
+        return set()
+
+    df = pd.read_csv(checkpoint_path)
+    completed = set()
+    for _, row in df.iterrows():
+        key = (row['item_id'], row['level'], row['thinking'], row['run'])
+        completed.add(key)
+    return completed
+
+
+def load_existing_results(checkpoint_path: str) -> list:
+    """Load existing results from checkpoint as list of dicts."""
+    if not Path(checkpoint_path).exists():
+        return []
+
+    df = pd.read_csv(checkpoint_path)
+    return df.to_dict('records')
+
+
+async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
     """Run ETHICS experiment asynchronously."""
     data_path = "data/ethics_sample.csv"
+    checkpoint_path = "results/raw/ethics_checkpoint.csv"
+
     if not Path(data_path).exists():
         print(f"ETHICS: {data_path} not found. Skipping.")
         return []
@@ -538,11 +562,19 @@ async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=
             subscales.append(subset)
         ethics = pd.concat(subscales, ignore_index=True)
 
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(ethics)
-    print(f"ETHICS: Starting with {len(ethics)} items, stratified random ({total_items} total API calls)")
+    # Load existing progress if resuming
+    completed = set()
     results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"ETHICS: Resuming with {len(completed)} items already completed")
 
-    with tqdm(total=total_items, desc="ETHICS", unit="item", leave=True) as pbar:
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(ethics)
+    remaining = total_items - len(completed)
+    print(f"ETHICS: {len(ethics)} items, {remaining} API calls remaining")
+
+    with tqdm(total=total_items, initial=len(completed), desc="ETHICS", unit="item", leave=True) as pbar:
         for run in range(N_RUNS):
             for thinking in THINKING_CONDITIONS:
                 for level in LEVELS:
@@ -550,6 +582,11 @@ async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=
                     pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
                     for idx, row in ethics.iterrows():
+                        # Skip if already completed
+                        key = (row['item_id'], level, thinking, run)
+                        if key in completed:
+                            continue
+
                         try:
                             response_data = await run_single_item_ethics_async(row, level, thinking, include_confidence)
                             result = build_ethics_result(row, level, thinking, run, response_data, include_confidence)
@@ -573,9 +610,11 @@ async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=
     return results
 
 
-async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True):
+async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
     """Run MoralChoice experiment asynchronously."""
     data_path = "data/moralchoice_sample.csv"
+    checkpoint_path = "results/raw/moralchoice_checkpoint.csv"
+
     if not Path(data_path).exists():
         print(f"MoralChoice: {data_path} not found. Skipping.")
         return []
@@ -590,11 +629,19 @@ async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_
         high_amb = high_stratum.sample(n=min(per_level, len(high_stratum)), random_state=config.RANDOM_SEED)
         mc = pd.concat([low_amb, high_amb], ignore_index=True)
 
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(mc)
-    print(f"MoralChoice: Starting with {len(mc)} items, stratified random ({total_items} total API calls)")
+    # Load existing progress if resuming
+    completed = set()
     results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"MoralChoice: Resuming with {len(completed)} items already completed")
 
-    with tqdm(total=total_items, desc="MoralChoice", unit="item", leave=True) as pbar:
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(mc)
+    remaining = total_items - len(completed)
+    print(f"MoralChoice: {len(mc)} items, {remaining} API calls remaining")
+
+    with tqdm(total=total_items, initial=len(completed), desc="MoralChoice", unit="item", leave=True) as pbar:
         for run in range(N_RUNS):
             for thinking in THINKING_CONDITIONS:
                 for level in LEVELS:
@@ -602,6 +649,11 @@ async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_
                     pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
                     for idx, row in mc.iterrows():
+                        # Skip if already completed
+                        key = (row['item_id'], level, thinking, run)
+                        if key in completed:
+                            continue
+
                         try:
                             response_data = await run_single_item_moralchoice_async(row, level, thinking, include_confidence)
                             result = build_moralchoice_result(row, level, thinking, run, response_data, include_confidence)
@@ -625,9 +677,11 @@ async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_
     return results
 
 
-async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True):
+async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
     """Run MORABLES experiment asynchronously."""
     data_path = "data/morables/morables_sample.csv"
+    checkpoint_path = "results/raw/morables_checkpoint.csv"
+
     if not Path(data_path).exists():
         print(f"MORABLES: {data_path} not found. Skipping.")
         return []
@@ -636,11 +690,19 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
     if sample_size and len(morables) > sample_size:
         morables = morables.sample(n=sample_size, random_state=config.RANDOM_SEED)
 
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(morables)
-    print(f"MORABLES: Starting with {len(morables)} items ({total_items} total API calls)")
+    # Load existing progress if resuming
+    completed = set()
     results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"MORABLES: Resuming with {len(completed)} items already completed")
 
-    with tqdm(total=total_items, desc="MORABLES", unit="item", leave=True) as pbar:
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(morables)
+    remaining = total_items - len(completed)
+    print(f"MORABLES: {len(morables)} items, {remaining} API calls remaining")
+
+    with tqdm(total=total_items, initial=len(completed), desc="MORABLES", unit="item", leave=True) as pbar:
         for run in range(N_RUNS):
             for thinking in THINKING_CONDITIONS:
                 for level in LEVELS:
@@ -648,6 +710,11 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
                     pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
                     for idx, row in morables.iterrows():
+                        # Skip if already completed
+                        key = (row['item_id'], level, thinking, run)
+                        if key in completed:
+                            continue
+
                         try:
                             response_data = await run_single_item_morables_async(row, level, thinking, include_confidence)
                             result = build_morables_result(row, level, thinking, run, response_data, include_confidence)
@@ -671,9 +738,15 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
     return results
 
 
-async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50):
+async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50, resume: bool = False):
     """Background task to write checkpoints as results come in."""
+    # Load existing results if resuming
     all_results = {'ethics': [], 'moralchoice': [], 'morables': []}
+    if resume:
+        for bm in all_results.keys():
+            all_results[bm] = load_existing_results(f"results/raw/{bm}_checkpoint.csv")
+        total_existing = sum(len(r) for r in all_results.values())
+        print(f"  [Checkpoint] Loaded {total_existing} existing results")
     count = 0
 
     while True:
@@ -775,29 +848,31 @@ async def run_async(args):
     print(f"Runs: {N_RUNS}")
     print(f"Sample size: {args.sample_size}")
     print(f"Rate limit: {config.CALLS_PER_MINUTE}/min")
+    print(f"Resume mode: {args.resume}")
     print()
 
     # Create output directories
     Path("results/raw").mkdir(parents=True, exist_ok=True)
     Path("results/processed").mkdir(parents=True, exist_ok=True)
 
-    # Reset rate limiter
-    reset_rate_limiter()
+    # Reset rate limiter (unless resuming, to preserve stats)
+    if not args.resume:
+        reset_rate_limiter()
 
     # Results queue for checkpoint writing
     results_queue = asyncio.Queue()
 
     # Start checkpoint writer
-    checkpoint_task = asyncio.create_task(checkpoint_writer(results_queue))
+    checkpoint_task = asyncio.create_task(checkpoint_writer(results_queue, resume=args.resume))
 
     # Build list of experiment tasks
     tasks = []
     if args.ethics:
-        tasks.append(run_ethics_experiment_async(results_queue, args.sample_size, args.confidence))
+        tasks.append(run_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
     if args.moralchoice:
-        tasks.append(run_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence))
+        tasks.append(run_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
     if args.morables:
-        tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence))
+        tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
 
     print(f"Running {len(tasks)} benchmark(s) in parallel...")
     print()
@@ -873,6 +948,7 @@ Examples:
   python run_experiment.py --ethics           # Run only ETHICS
   python run_experiment.py --async --morables # Run only MORABLES (async)
   python run_experiment.py --sample 50        # Use 50 items per benchmark
+  python run_experiment.py --async --resume   # Resume from checkpoints
         """
     )
 
@@ -882,6 +958,8 @@ Examples:
                         help=f'Sample size per benchmark (default: {SAMPLE_SIZE}, use 0 for full)')
     parser.add_argument('--no-confidence', dest='confidence', action='store_false',
                         help='Disable confidence scoring')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from existing checkpoints (async mode only)')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true', help='Run ETHICS benchmark')
