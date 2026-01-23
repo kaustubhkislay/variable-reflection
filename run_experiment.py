@@ -45,7 +45,7 @@ import config
 # EXPERIMENT SETTINGS (defaults, can be overridden via CLI)
 # =============================================================================
 
-LEVELS = [0, 1, 2, 3, 4, 5]
+LEVELS = [0, 2, 4, 5]
 THINKING_CONDITIONS = [False, True]
 N_RUNS = config.N_RUNS
 SAMPLE_SIZE = 100  # Set to None for full dataset

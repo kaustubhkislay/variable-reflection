@@ -18,7 +18,7 @@ RAW_DIR = "results/raw"
 PROCESSED_DIR = "results/processed"
 
 # Experiment Settings
-N_RUNS = 1
+N_RUNS = 3
 RANDOM_SEED = 67
 
 # Rate Limiting
