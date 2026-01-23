@@ -31,7 +31,7 @@ This project investigates whether prompting large language models to engage in v
 variable-reflection/
 ├── config.py              # API and experiment configuration
 ├── prompts.py             # Reflection-level prompt templates
-├── run_experiment.py      # Main experiment runner (sync/async)
+├── run_experiment.py      # Main experiment runner (sync/async with resume)
 ├── run_pilot.py           # Quick pilot testing
 ├── prepare_data.py        # Data sampling and preparation
 ├── analyze_results.py     # Results analysis
@@ -47,13 +47,14 @@ variable-reflection/
 │   ├── moralchoice/       # MoralChoice benchmark data
 │   └── *_sample.csv       # Sampled subsets for experiments
 ├── results/
-│   ├── raw/               # Raw API responses
-│   ├── processed/         # Cleaned results
+│   ├── raw/               # Checkpoints during experiment
+│   ├── processed/         # Final cleaned results
 │   └── pilot/             # Pilot run outputs
-├── outputs/
-│   └── tables/            # Generated analysis tables
+├── outputs/               # Analysis outputs
+│   ├── *.png              # Generated figures
+│   └── *.csv              # Summary tables
 └── notebooks/
-    └── run_experiments.ipynb  # Interactive experiment notebook
+    └── analysis.ipynb     # Results analysis notebook
 ```
 
 ## Installation
@@ -85,8 +86,9 @@ MAX_TOKENS_NO_THINKING = 1000        # Response limit without thinking
 MAX_TOKENS_WITH_THINKING = 4000      # Response limit with thinking
 MAX_TOKENS_LEVEL_0 = 30              # Minimal tokens for Level 0
 TEMPERATURE = 0                       # Deterministic responses
-N_RUNS = 1                            # Repetitions per condition
+N_RUNS = 3                            # Repetitions per condition
 CALLS_PER_MINUTE = 50                 # Rate limit
+RANDOM_SEED = 67                      # For reproducible sampling
 ```
 
 ## Usage
@@ -99,34 +101,63 @@ python prepare_data.py --sample-size 100
 
 ### Run Experiments
 
-**Command Line (Async - Recommended):**
+**Async Mode (Recommended):**
 ```bash
-python run_experiment.py --mode async --sample-size 50
+python run_experiment.py --async --sample 100
 ```
 
-**Command Line (Sync):**
+**Resume After Interruption:**
 ```bash
-python run_experiment.py --mode sync --sample-size 50
+python run_experiment.py --async --resume --sample 100
 ```
 
-**Jupyter Notebook:**
+**Sync Mode:**
 ```bash
-jupyter notebook notebooks/run_experiments.ipynb
+python run_experiment.py --sample 100
+```
+
+**Run Specific Benchmarks:**
+```bash
+python run_experiment.py --async --ethics --moralchoice --sample 100
+```
+
+### Long-Running Experiments
+
+For experiments lasting several hours, use `tmux` to keep the process running:
+
+```bash
+tmux new -s experiment
+python run_experiment.py --async --sample 100
+# Detach: Ctrl+B, then D
+# Reattach later: tmux attach -t experiment
 ```
 
 ### Quick Pilot Test
 
 ```bash
-python run_pilot.py --items 5
+python run_experiment.py --async --sample 6
+```
+
+### Analysis
+
+```bash
+jupyter notebook notebooks/analysis.ipynb
 ```
 
 ## Experimental Conditions
 
 Each item is tested under multiple conditions:
 
-- **Reflection Levels**: 0, 1, 2, 3, 4, 5 (or subset: 0, 2, 4, 5 recommended)
+- **Reflection Levels**: 0, 2, 4, 5 (default; captures distinct cognitive strategies)
 - **Extended Thinking**: Enabled / Disabled
-- **Runs**: Configurable repetitions for consistency analysis
+- **Runs**: 3 repetitions for consistency analysis
+
+### Stratified Sampling
+
+Samples are stratified to maintain category balance:
+- **ETHICS**: Equal items from commonsense, deontology, virtue subscales
+- **MoralChoice**: Equal items from low and high ambiguity conditions
+- **MORABLES**: Random sample (no categories)
 
 ## Metrics Tracked
 
@@ -151,15 +182,21 @@ Each item is tested under multiple conditions:
 
 ## Analysis
 
+Open the analysis notebook:
+
 ```bash
-python analyze_results.py
+jupyter notebook notebooks/analysis.ipynb
 ```
 
-Generates:
-- Accuracy by level and thinking condition
+The notebook generates:
+- Accuracy by level and thinking condition (with visualizations)
 - Confidence calibration curves
 - Consistency across runs
-- Category-level breakdowns
+- Category-level breakdowns (subscale, ambiguity)
+- Response characteristics (length, reasoning markers)
+- Summary statistics exported to CSV
+
+Outputs are saved to the `outputs/` directory.
 
 ## Key Research Questions
 
