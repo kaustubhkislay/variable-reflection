@@ -8,6 +8,7 @@ MODEL = "claude-haiku-4-5-20251001"  # Anthropic model ID
 THINKING_BUDGET = 2000
 MAX_TOKENS_NO_THINKING = 1000
 MAX_TOKENS_WITH_THINKING = 4000
+MAX_TOKENS_LEVEL_0 = 100  # Reduced token limit for Level 0 (direct response)
 TEMPERATURE = 0  # Deterministic for reproducibility
 
 # Paths
