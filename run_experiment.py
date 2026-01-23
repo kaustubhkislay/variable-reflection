@@ -376,10 +376,11 @@ def run_ethics_experiment(sample_size=None, include_confidence=True):
         per_subscale = sample_size // 3
         subscales = []
         for subscale in ['commonsense', 'deontology', 'virtue']:
-            subset = ethics[ethics['subscale'] == subscale].head(per_subscale)
+            stratum = ethics[ethics['subscale'] == subscale]
+            subset = stratum.sample(n=min(per_subscale, len(stratum)), random_state=config.RANDOM_SEED)
             subscales.append(subset)
         ethics = pd.concat(subscales, ignore_index=True)
-        print(f"  Using {len(ethics)} items (balanced: {per_subscale} per subscale)")
+        print(f"  Using {len(ethics)} items (stratified random: {per_subscale} per subscale)")
 
     results = []
     total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
@@ -423,10 +424,12 @@ def run_moralchoice_experiment(sample_size=None, include_confidence=True):
 
     if sample_size:
         per_level = sample_size // 2
-        low_amb = mc[mc['ambiguity'] == 'low'].head(per_level)
-        high_amb = mc[mc['ambiguity'] == 'high'].head(per_level)
+        low_stratum = mc[mc['ambiguity'] == 'low']
+        high_stratum = mc[mc['ambiguity'] == 'high']
+        low_amb = low_stratum.sample(n=min(per_level, len(low_stratum)), random_state=config.RANDOM_SEED)
+        high_amb = high_stratum.sample(n=min(per_level, len(high_stratum)), random_state=config.RANDOM_SEED)
         mc = pd.concat([low_amb, high_amb], ignore_index=True)
-        print(f"  Using {len(mc)} items (balanced: {len(low_amb)} low, {len(high_amb)} high)")
+        print(f"  Using {len(mc)} items (stratified random: {len(low_amb)} low, {len(high_amb)} high)")
 
     results = []
     total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
@@ -530,12 +533,13 @@ async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=
         per_subscale = sample_size // 3
         subscales = []
         for subscale in ['commonsense', 'deontology', 'virtue']:
-            subset = ethics[ethics['subscale'] == subscale].head(per_subscale)
+            stratum = ethics[ethics['subscale'] == subscale]
+            subset = stratum.sample(n=min(per_subscale, len(stratum)), random_state=config.RANDOM_SEED)
             subscales.append(subset)
         ethics = pd.concat(subscales, ignore_index=True)
 
     total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(ethics)
-    print(f"ETHICS: Starting with {len(ethics)} items ({total_items} total API calls)")
+    print(f"ETHICS: Starting with {len(ethics)} items, stratified random ({total_items} total API calls)")
     results = []
 
     with tqdm(total=total_items, desc="ETHICS", unit="item", leave=True) as pbar:
@@ -580,12 +584,14 @@ async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_
 
     if sample_size:
         per_level = sample_size // 2
-        low_amb = mc[mc['ambiguity'] == 'low'].head(per_level)
-        high_amb = mc[mc['ambiguity'] == 'high'].head(per_level)
+        low_stratum = mc[mc['ambiguity'] == 'low']
+        high_stratum = mc[mc['ambiguity'] == 'high']
+        low_amb = low_stratum.sample(n=min(per_level, len(low_stratum)), random_state=config.RANDOM_SEED)
+        high_amb = high_stratum.sample(n=min(per_level, len(high_stratum)), random_state=config.RANDOM_SEED)
         mc = pd.concat([low_amb, high_amb], ignore_index=True)
 
     total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(mc)
-    print(f"MoralChoice: Starting with {len(mc)} items ({total_items} total API calls)")
+    print(f"MoralChoice: Starting with {len(mc)} items, stratified random ({total_items} total API calls)")
     results = []
 
     with tqdm(total=total_items, desc="MoralChoice", unit="item", leave=True) as pbar:
