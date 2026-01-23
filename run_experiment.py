@@ -57,8 +57,8 @@ INCLUDE_CONFIDENCE = True
 
 def run_single_item_ethics(row, level, thinking, include_confidence=True):
     """Run single ETHICS item at given condition (sync)."""
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_ethics_prompt(5, row['scenario'], include_confidence=include_confidence)
@@ -91,8 +91,8 @@ def run_single_item_ethics(row, level, thinking, include_confidence=True):
 def run_single_item_moralchoice(row, level, thinking, include_confidence=True):
     """Run single MoralChoice item at given condition (sync)."""
     context = row.get('context', '')
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_moralchoice_prompt(5, context, row['option_a'], row['option_b'],
@@ -129,8 +129,8 @@ def run_single_item_morables(row, level, thinking, include_confidence=True):
     """Run single MORABLES item at given condition (sync)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_morables_prompt(5, row['fable'], options, include_confidence=include_confidence)
@@ -167,8 +167,8 @@ def run_single_item_morables(row, level, thinking, include_confidence=True):
 
 async def run_single_item_ethics_async(row, level, thinking, include_confidence=True):
     """Run single ETHICS item at given condition (async)."""
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_ethics_prompt(5, row['scenario'], include_confidence=include_confidence)
@@ -201,8 +201,8 @@ async def run_single_item_ethics_async(row, level, thinking, include_confidence=
 
 async def run_single_item_moralchoice_async(row, level, thinking, include_confidence=True):
     """Run single MoralChoice item at given condition (async)."""
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_moralchoice_prompt(5, row['context'], row['option_a'], row['option_b'],
@@ -239,8 +239,8 @@ async def run_single_item_morables_async(row, level, thinking, include_confidenc
     """Run single MORABLES item at given condition (async)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
-    # Use reduced token limit for Level 0
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if level == 0 else None
+    # Use reduced token limit for Level 0 (only when thinking is disabled)
+    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
         prompt1 = get_morables_prompt(5, row['fable'], options, include_confidence=include_confidence)
