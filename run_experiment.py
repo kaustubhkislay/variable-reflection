@@ -7,6 +7,7 @@ import os
 import re
 from pathlib import Path
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as atqdm
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -533,35 +534,36 @@ async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=
             subscales.append(subset)
         ethics = pd.concat(subscales, ignore_index=True)
 
-    print(f"ETHICS: Starting with {len(ethics)} items")
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(ethics)
+    print(f"ETHICS: Starting with {len(ethics)} items ({total_items} total API calls)")
     results = []
 
-    for run in range(N_RUNS):
-        for thinking in THINKING_CONDITIONS:
-            for level in LEVELS:
-                thinking_label = "ON" if thinking else "OFF"
+    with tqdm(total=total_items, desc="ETHICS", unit="item", leave=True) as pbar:
+        for run in range(N_RUNS):
+            for thinking in THINKING_CONDITIONS:
+                for level in LEVELS:
+                    thinking_label = "ON" if thinking else "OFF"
+                    pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
-                for idx, row in ethics.iterrows():
-                    try:
-                        response_data = await run_single_item_ethics_async(row, level, thinking, include_confidence)
-                        result = build_ethics_result(row, level, thinking, run, response_data, include_confidence)
-                        result['benchmark'] = 'ethics'
-                        results.append(result)
-                        await results_queue.put(('ethics', result))
-                    except Exception as e:
-                        print(f"ETHICS error on {row['item_id']}: {e}")
-                        results.append({
-                            'benchmark': 'ethics',
-                            'item_id': row['item_id'],
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
-
-                stats = get_rate_stats()
-                print(f"ETHICS: L{level} T-{thinking_label} done | Rate: {stats['rate']}/min")
+                    for idx, row in ethics.iterrows():
+                        try:
+                            response_data = await run_single_item_ethics_async(row, level, thinking, include_confidence)
+                            result = build_ethics_result(row, level, thinking, run, response_data, include_confidence)
+                            result['benchmark'] = 'ethics'
+                            results.append(result)
+                            await results_queue.put(('ethics', result))
+                        except Exception as e:
+                            print(f"\nETHICS error on {row['item_id']}: {e}")
+                            results.append({
+                                'benchmark': 'ethics',
+                                'item_id': row['item_id'],
+                                'level': level,
+                                'thinking': thinking,
+                                'run': run,
+                                'error': str(e),
+                                'timestamp': datetime.now().isoformat(),
+                            })
+                        pbar.update(1)
 
     print(f"ETHICS: Complete with {len(results)} results")
     return results
@@ -582,35 +584,36 @@ async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_
         high_amb = mc[mc['ambiguity'] == 'high'].head(per_level)
         mc = pd.concat([low_amb, high_amb], ignore_index=True)
 
-    print(f"MoralChoice: Starting with {len(mc)} items")
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(mc)
+    print(f"MoralChoice: Starting with {len(mc)} items ({total_items} total API calls)")
     results = []
 
-    for run in range(N_RUNS):
-        for thinking in THINKING_CONDITIONS:
-            for level in LEVELS:
-                thinking_label = "ON" if thinking else "OFF"
+    with tqdm(total=total_items, desc="MoralChoice", unit="item", leave=True) as pbar:
+        for run in range(N_RUNS):
+            for thinking in THINKING_CONDITIONS:
+                for level in LEVELS:
+                    thinking_label = "ON" if thinking else "OFF"
+                    pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
-                for idx, row in mc.iterrows():
-                    try:
-                        response_data = await run_single_item_moralchoice_async(row, level, thinking, include_confidence)
-                        result = build_moralchoice_result(row, level, thinking, run, response_data, include_confidence)
-                        result['benchmark'] = 'moralchoice'
-                        results.append(result)
-                        await results_queue.put(('moralchoice', result))
-                    except Exception as e:
-                        print(f"MoralChoice error on {row['item_id']}: {e}")
-                        results.append({
-                            'benchmark': 'moralchoice',
-                            'item_id': row['item_id'],
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
-
-                stats = get_rate_stats()
-                print(f"MoralChoice: L{level} T-{thinking_label} done | Rate: {stats['rate']}/min")
+                    for idx, row in mc.iterrows():
+                        try:
+                            response_data = await run_single_item_moralchoice_async(row, level, thinking, include_confidence)
+                            result = build_moralchoice_result(row, level, thinking, run, response_data, include_confidence)
+                            result['benchmark'] = 'moralchoice'
+                            results.append(result)
+                            await results_queue.put(('moralchoice', result))
+                        except Exception as e:
+                            print(f"\nMoralChoice error on {row['item_id']}: {e}")
+                            results.append({
+                                'benchmark': 'moralchoice',
+                                'item_id': row['item_id'],
+                                'level': level,
+                                'thinking': thinking,
+                                'run': run,
+                                'error': str(e),
+                                'timestamp': datetime.now().isoformat(),
+                            })
+                        pbar.update(1)
 
     print(f"MoralChoice: Complete with {len(results)} results")
     return results
@@ -627,35 +630,36 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
     if sample_size and len(morables) > sample_size:
         morables = morables.sample(n=sample_size, random_state=config.RANDOM_SEED)
 
-    print(f"MORABLES: Starting with {len(morables)} items")
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(morables)
+    print(f"MORABLES: Starting with {len(morables)} items ({total_items} total API calls)")
     results = []
 
-    for run in range(N_RUNS):
-        for thinking in THINKING_CONDITIONS:
-            for level in LEVELS:
-                thinking_label = "ON" if thinking else "OFF"
+    with tqdm(total=total_items, desc="MORABLES", unit="item", leave=True) as pbar:
+        for run in range(N_RUNS):
+            for thinking in THINKING_CONDITIONS:
+                for level in LEVELS:
+                    thinking_label = "ON" if thinking else "OFF"
+                    pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
-                for idx, row in morables.iterrows():
-                    try:
-                        response_data = await run_single_item_morables_async(row, level, thinking, include_confidence)
-                        result = build_morables_result(row, level, thinking, run, response_data, include_confidence)
-                        result['benchmark'] = 'morables'
-                        results.append(result)
-                        await results_queue.put(('morables', result))
-                    except Exception as e:
-                        print(f"MORABLES error on {row['item_id']}: {e}")
-                        results.append({
-                            'benchmark': 'morables',
-                            'item_id': row['item_id'],
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
-
-                stats = get_rate_stats()
-                print(f"MORABLES: L{level} T-{thinking_label} done | Rate: {stats['rate']}/min")
+                    for idx, row in morables.iterrows():
+                        try:
+                            response_data = await run_single_item_morables_async(row, level, thinking, include_confidence)
+                            result = build_morables_result(row, level, thinking, run, response_data, include_confidence)
+                            result['benchmark'] = 'morables'
+                            results.append(result)
+                            await results_queue.put(('morables', result))
+                        except Exception as e:
+                            print(f"\nMORABLES error on {row['item_id']}: {e}")
+                            results.append({
+                                'benchmark': 'morables',
+                                'item_id': row['item_id'],
+                                'level': level,
+                                'thinking': thinking,
+                                'run': run,
+                                'error': str(e),
+                                'timestamp': datetime.now().isoformat(),
+                            })
+                        pbar.update(1)
 
     print(f"MORABLES: Complete with {len(results)} results")
     return results
