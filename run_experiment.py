@@ -53,22 +53,13 @@ INCLUDE_CONFIDENCE = True
 
 
 # =============================================================================
-# SINGLE ITEM RUNNERS (SYNC)
+# SINGLE ITEM RUNNERS (Unified async implementation with sync wrappers)
 # =============================================================================
 
-def run_single_item_ethics(row, level, thinking, include_confidence=True):
-    """Run single ETHICS item at given condition (sync)."""
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
-
-    if level == 5:
-        prompt1 = get_ethics_prompt(5, row['scenario'], include_confidence=include_confidence)
-        response1 = call_with_rate_limit(prompt1, thinking)
-
-        prompt2 = get_ethics_prompt(5, row['scenario'], response1.content,
-                                     include_confidence=include_confidence)
-        response2 = call_with_rate_limit(prompt2, thinking)
-
+def _build_response_data(response1, response2=None):
+    """Build standardized response data dict from API response(s)."""
+    if response2 is not None:
+        # Two-pass (Level 5)
         return {
             'content': response2.content,
             'thinking': response2.thinking,
@@ -77,199 +68,136 @@ def run_single_item_ethics(row, level, thinking, include_confidence=True):
             'output_tokens': response1.output_tokens + response2.output_tokens,
         }
     else:
-        prompt = get_ethics_prompt(level, row['scenario'], include_confidence=include_confidence)
-        response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens)
-
+        # Single pass
         return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
+            'content': response1.content,
+            'thinking': response1.thinking,
+            'full_response': response1.content,
+            'input_tokens': response1.input_tokens,
+            'output_tokens': response1.output_tokens,
         }
 
 
-def run_single_item_moralchoice(row, level, thinking, include_confidence=True):
-    """Run single MoralChoice item at given condition (sync)."""
-    context = row.get('context', '')
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
+async def _run_single_item_async(prompt_fn, level, thinking, include_confidence, **prompt_kwargs):
+    """
+    Generic async single-item runner.
+
+    Args:
+        prompt_fn: Prompt generator function (get_ethics_prompt, get_moralchoice_prompt, etc.)
+        level: Reflection level (0-5)
+        thinking: Whether extended thinking is enabled
+        include_confidence: Whether to include confidence in prompt
+        **prompt_kwargs: Additional kwargs passed to prompt_fn (scenario, context, options, etc.)
+
+    Returns:
+        Response data dict with content, thinking, full_response, and token counts
+    """
     max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
-        prompt1 = get_moralchoice_prompt(5, context, row['option_a'], row['option_b'],
-                                         include_confidence=include_confidence)
-        response1 = call_with_rate_limit(prompt1, thinking)
+        # Two-pass reflection
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = await call_with_rate_limit_async(prompt1, thinking)
 
-        prompt2 = get_moralchoice_prompt(5, context, row['option_a'], row['option_b'],
-                                         previous_response=response1.content,
-                                         include_confidence=include_confidence)
-        response2 = call_with_rate_limit(prompt2, thinking)
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = await call_with_rate_limit_async(prompt2, thinking)
 
-        return {
-            'content': response2.content,
-            'thinking': response2.thinking,
-            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
-            'input_tokens': response1.input_tokens + response2.input_tokens,
-            'output_tokens': response1.output_tokens + response2.output_tokens,
-        }
+        return _build_response_data(response1, response2)
     else:
-        prompt = get_moralchoice_prompt(level, context, row['option_a'], row['option_b'],
-                                        include_confidence=include_confidence)
-        response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens)
+        prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
+        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens)
 
-        return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
-        }
+        return _build_response_data(response)
 
 
-def run_single_item_morables(row, level, thinking, include_confidence=True):
-    """Run single MORABLES item at given condition (sync)."""
-    options = [row['option_a'], row['option_b'], row['option_c'],
-               row['option_d'], row['option_e']]
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
+def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, **prompt_kwargs):
+    """
+    Generic sync single-item runner.
+
+    Args:
+        prompt_fn: Prompt generator function (get_ethics_prompt, get_moralchoice_prompt, etc.)
+        level: Reflection level (0-5)
+        thinking: Whether extended thinking is enabled
+        include_confidence: Whether to include confidence in prompt
+        **prompt_kwargs: Additional kwargs passed to prompt_fn
+
+    Returns:
+        Response data dict with content, thinking, full_response, and token counts
+    """
     max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
 
     if level == 5:
-        prompt1 = get_morables_prompt(5, row['fable'], options, include_confidence=include_confidence)
+        # Two-pass reflection
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
         response1 = call_with_rate_limit(prompt1, thinking)
 
-        prompt2 = get_morables_prompt(5, row['fable'], options,
-                                       previous_response=response1.content,
-                                       include_confidence=include_confidence)
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
         response2 = call_with_rate_limit(prompt2, thinking)
 
-        return {
-            'content': response2.content,
-            'thinking': response2.thinking,
-            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
-            'input_tokens': response1.input_tokens + response2.input_tokens,
-            'output_tokens': response1.output_tokens + response2.output_tokens,
-        }
+        return _build_response_data(response1, response2)
     else:
-        prompt = get_morables_prompt(level, row['fable'], options, include_confidence=include_confidence)
+        prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
         response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens)
 
-        return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
-        }
+        return _build_response_data(response)
 
 
-# =============================================================================
-# SINGLE ITEM RUNNERS (ASYNC)
-# =============================================================================
+# Benchmark-specific runners (async) - thin wrappers around generic runner
 
 async def run_single_item_ethics_async(row, level, thinking, include_confidence=True):
     """Run single ETHICS item at given condition (async)."""
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
-
-    if level == 5:
-        prompt1 = get_ethics_prompt(5, row['scenario'], include_confidence=include_confidence)
-        response1 = await call_with_rate_limit_async(prompt1, thinking)
-
-        prompt2 = get_ethics_prompt(5, row['scenario'],
-                                    previous_response=response1.content,
-                                    include_confidence=include_confidence)
-        response2 = await call_with_rate_limit_async(prompt2, thinking)
-
-        return {
-            'content': response2.content,
-            'thinking': response2.thinking,
-            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
-            'input_tokens': response1.input_tokens + response2.input_tokens,
-            'output_tokens': response1.output_tokens + response2.output_tokens,
-        }
-    else:
-        prompt = get_ethics_prompt(level, row['scenario'], include_confidence=include_confidence)
-        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens)
-
-        return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
-        }
+    return await _run_single_item_async(
+        get_ethics_prompt, level, thinking, include_confidence,
+        scenario=row['scenario']
+    )
 
 
 async def run_single_item_moralchoice_async(row, level, thinking, include_confidence=True):
     """Run single MoralChoice item at given condition (async)."""
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
-
-    if level == 5:
-        prompt1 = get_moralchoice_prompt(5, row['context'], row['option_a'], row['option_b'],
-                                         include_confidence=include_confidence)
-        response1 = await call_with_rate_limit_async(prompt1, thinking)
-
-        prompt2 = get_moralchoice_prompt(5, row['context'], row['option_a'], row['option_b'],
-                                         previous_response=response1.content,
-                                         include_confidence=include_confidence)
-        response2 = await call_with_rate_limit_async(prompt2, thinking)
-
-        return {
-            'content': response2.content,
-            'thinking': response2.thinking,
-            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
-            'input_tokens': response1.input_tokens + response2.input_tokens,
-            'output_tokens': response1.output_tokens + response2.output_tokens,
-        }
-    else:
-        prompt = get_moralchoice_prompt(level, row['context'], row['option_a'], row['option_b'],
-                                        include_confidence=include_confidence)
-        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens)
-
-        return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
-        }
+    return await _run_single_item_async(
+        get_moralchoice_prompt, level, thinking, include_confidence,
+        context=row['context'], option_a=row['option_a'], option_b=row['option_b']
+    )
 
 
 async def run_single_item_morables_async(row, level, thinking, include_confidence=True):
     """Run single MORABLES item at given condition (async)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
-    # Use reduced token limit for Level 0 (only when thinking is disabled)
-    max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
+    return await _run_single_item_async(
+        get_morables_prompt, level, thinking, include_confidence,
+        fable=row['fable'], options=options
+    )
 
-    if level == 5:
-        prompt1 = get_morables_prompt(5, row['fable'], options, include_confidence=include_confidence)
-        response1 = await call_with_rate_limit_async(prompt1, thinking)
 
-        prompt2 = get_morables_prompt(5, row['fable'], options,
-                                      previous_response=response1.content,
-                                      include_confidence=include_confidence)
-        response2 = await call_with_rate_limit_async(prompt2, thinking)
+# Benchmark-specific runners (sync) - thin wrappers for backwards compatibility
 
-        return {
-            'content': response2.content,
-            'thinking': response2.thinking,
-            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
-            'input_tokens': response1.input_tokens + response2.input_tokens,
-            'output_tokens': response1.output_tokens + response2.output_tokens,
-        }
-    else:
-        prompt = get_morables_prompt(level, row['fable'], options, include_confidence=include_confidence)
-        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens)
+def run_single_item_ethics(row, level, thinking, include_confidence=True):
+    """Run single ETHICS item at given condition (sync)."""
+    return _run_single_item_sync(
+        get_ethics_prompt, level, thinking, include_confidence,
+        scenario=row['scenario']
+    )
 
-        return {
-            'content': response.content,
-            'thinking': response.thinking,
-            'full_response': response.content,
-            'input_tokens': response.input_tokens,
-            'output_tokens': response.output_tokens,
-        }
+
+def run_single_item_moralchoice(row, level, thinking, include_confidence=True):
+    """Run single MoralChoice item at given condition (sync)."""
+    return _run_single_item_sync(
+        get_moralchoice_prompt, level, thinking, include_confidence,
+        context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+def run_single_item_morables(row, level, thinking, include_confidence=True):
+    """Run single MORABLES item at given condition (sync)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return _run_single_item_sync(
+        get_morables_prompt, level, thinking, include_confidence,
+        fable=row['fable'], options=options
+    )
 
 
 # =============================================================================
@@ -365,12 +293,17 @@ def build_morables_result(row, level, thinking, run, response_data, include_conf
 
 
 # =============================================================================
-# SYNC EXPERIMENT RUNNERS
+# DATA LOADING HELPERS (shared by sync and async runners)
 # =============================================================================
 
-def run_ethics_experiment(sample_size=None, include_confidence=True):
-    """Run full ETHICS experiment (sync)."""
-    ethics = pd.read_csv("data/ethics_sample.csv")
+def load_ethics_data(sample_size: Optional[int] = None) -> Optional[pd.DataFrame]:
+    """Load and optionally sample ETHICS data with stratification by subscale."""
+    data_path = "data/ethics_sample.csv"
+    if not Path(data_path).exists():
+        print(f"ETHICS: {data_path} not found. Skipping.")
+        return None
+
+    ethics = pd.read_csv(data_path)
 
     if sample_size:
         per_subscale = sample_size // 3
@@ -380,47 +313,21 @@ def run_ethics_experiment(sample_size=None, include_confidence=True):
             subset = stratum.sample(n=min(per_subscale, len(stratum)), random_state=config.RANDOM_SEED)
             subscales.append(subset)
         ethics = pd.concat(subscales, ignore_index=True)
-        print(f"  Using {len(ethics)} items (stratified random: {per_subscale} per subscale)")
+        print(f"  Using {len(ethics)} items (stratified: {per_subscale} per subscale)")
+    else:
+        print(f"  Using {len(ethics)} items")
 
-    results = []
-    total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
-    condition_num = 0
-
-    for run in range(N_RUNS):
-        for thinking in THINKING_CONDITIONS:
-            for level in LEVELS:
-                condition_num += 1
-                thinking_label = "ON" if thinking else "OFF"
-
-                print(f"\n[{condition_num}/{total_conditions}] "
-                      f"ETHICS Run {run+1}, Level {level}, Thinking {thinking_label}")
-
-                for _, row in tqdm(ethics.iterrows(), total=len(ethics),
-                                   desc=f"R{run+1}-L{level}-{thinking_label}"):
-                    try:
-                        response_data = run_single_item_ethics(row, level, thinking, include_confidence)
-                        results.append(build_ethics_result(row, level, thinking, run, response_data, include_confidence))
-                    except Exception as e:
-                        print(f"Error on item {row['item_id']}: {e}")
-                        results.append({
-                            'item_id': row['item_id'],
-                            'subscale': row.get('subscale', ''),
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
-
-                # Checkpoint
-                pd.DataFrame(results).to_csv("results/raw/ethics_checkpoint.csv", index=False)
-
-    return pd.DataFrame(results)
+    return ethics
 
 
-def run_moralchoice_experiment(sample_size=None, include_confidence=True):
-    """Run full MoralChoice experiment (sync)."""
-    mc = pd.read_csv("data/moralchoice_sample.csv")
+def load_moralchoice_data(sample_size: Optional[int] = None) -> Optional[pd.DataFrame]:
+    """Load and optionally sample MoralChoice data with stratification by ambiguity."""
+    data_path = "data/moralchoice_sample.csv"
+    if not Path(data_path).exists():
+        print(f"MoralChoice: {data_path} not found. Skipping.")
+        return None
+
+    mc = pd.read_csv(data_path)
 
     if sample_size:
         per_level = sample_size // 2
@@ -429,48 +336,18 @@ def run_moralchoice_experiment(sample_size=None, include_confidence=True):
         low_amb = low_stratum.sample(n=min(per_level, len(low_stratum)), random_state=config.RANDOM_SEED)
         high_amb = high_stratum.sample(n=min(per_level, len(high_stratum)), random_state=config.RANDOM_SEED)
         mc = pd.concat([low_amb, high_amb], ignore_index=True)
-        print(f"  Using {len(mc)} items (stratified random: {len(low_amb)} low, {len(high_amb)} high)")
+        print(f"  Using {len(mc)} items (stratified: {len(low_amb)} low, {len(high_amb)} high)")
+    else:
+        print(f"  Using {len(mc)} items")
 
-    results = []
-    total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
-    condition_num = 0
-
-    for run in range(N_RUNS):
-        for thinking in THINKING_CONDITIONS:
-            for level in LEVELS:
-                condition_num += 1
-                thinking_label = "ON" if thinking else "OFF"
-
-                print(f"\n[{condition_num}/{total_conditions}] "
-                      f"MoralChoice Run {run+1}, Level {level}, Thinking {thinking_label}")
-
-                for _, row in tqdm(mc.iterrows(), total=len(mc),
-                                   desc=f"R{run+1}-L{level}-{thinking_label}"):
-                    try:
-                        response_data = run_single_item_moralchoice(row, level, thinking, include_confidence)
-                        results.append(build_moralchoice_result(row, level, thinking, run, response_data, include_confidence))
-                    except Exception as e:
-                        print(f"Error on item {row['item_id']}: {e}")
-                        results.append({
-                            'item_id': row['item_id'],
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
-
-                # Checkpoint
-                pd.DataFrame(results).to_csv("results/raw/moralchoice_checkpoint.csv", index=False)
-
-    return pd.DataFrame(results)
+    return mc
 
 
-def run_morables_experiment(sample_size=None, include_confidence=True):
-    """Run full MORABLES experiment (sync)."""
+def load_morables_data(sample_size: Optional[int] = None) -> Optional[pd.DataFrame]:
+    """Load and optionally sample MORABLES data."""
     data_path = "data/morables/morables_sample.csv"
     if not Path(data_path).exists():
-        print(f"Error: {data_path} not found. Run 'python prepare_data.py' first.")
+        print(f"MORABLES: {data_path} not found. Skipping.")
         return None
 
     morables = pd.read_csv(data_path)
@@ -481,6 +358,49 @@ def run_morables_experiment(sample_size=None, include_confidence=True):
     else:
         print(f"  Using {len(morables)} items")
 
+    return morables
+
+
+def _build_error_result(row, level, thinking, run, error, extra_fields=None):
+    """Build standardized error result dict."""
+    result = {
+        'item_id': row['item_id'],
+        'level': level,
+        'thinking': thinking,
+        'run': run,
+        'error': str(error),
+        'timestamp': datetime.now().isoformat(),
+    }
+    if extra_fields:
+        result.update(extra_fields)
+    return result
+
+
+# =============================================================================
+# SYNC EXPERIMENT RUNNERS
+# =============================================================================
+
+def _run_experiment_sync(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    item_runner,
+    result_builder,
+    error_extra_fields_fn,
+    include_confidence: bool = True
+) -> pd.DataFrame:
+    """
+    Generic sync experiment runner.
+
+    Args:
+        benchmark_name: Name for logging (e.g., "ETHICS")
+        data: DataFrame with items to process
+        checkpoint_path: Path for checkpoint file
+        item_runner: Function(row, level, thinking, include_confidence) -> response_data
+        result_builder: Function(row, level, thinking, run, response_data, include_confidence) -> result dict
+        error_extra_fields_fn: Function(row) -> dict of extra fields for error results
+        include_confidence: Whether to include confidence scoring
+    """
     results = []
     total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
     condition_num = 0
@@ -492,28 +412,73 @@ def run_morables_experiment(sample_size=None, include_confidence=True):
                 thinking_label = "ON" if thinking else "OFF"
 
                 print(f"\n[{condition_num}/{total_conditions}] "
-                      f"MORABLES Run {run+1}, Level {level}, Thinking {thinking_label}")
+                      f"{benchmark_name} Run {run+1}, Level {level}, Thinking {thinking_label}")
 
-                for _, row in tqdm(morables.iterrows(), total=len(morables),
+                for _, row in tqdm(data.iterrows(), total=len(data),
                                    desc=f"R{run+1}-L{level}-{thinking_label}"):
                     try:
-                        response_data = run_single_item_morables(row, level, thinking, include_confidence)
-                        results.append(build_morables_result(row, level, thinking, run, response_data, include_confidence))
+                        response_data = item_runner(row, level, thinking, include_confidence)
+                        results.append(result_builder(row, level, thinking, run, response_data, include_confidence))
                     except Exception as e:
                         print(f"Error on item {row['item_id']}: {e}")
-                        results.append({
-                            'item_id': row['item_id'],
-                            'level': level,
-                            'thinking': thinking,
-                            'run': run,
-                            'error': str(e),
-                            'timestamp': datetime.now().isoformat(),
-                        })
+                        extra = error_extra_fields_fn(row) if error_extra_fields_fn else {}
+                        results.append(_build_error_result(row, level, thinking, run, e, extra))
 
-                # Checkpoint
-                pd.DataFrame(results).to_csv("results/raw/morables_checkpoint.csv", index=False)
+                # Checkpoint after each condition
+                pd.DataFrame(results).to_csv(checkpoint_path, index=False)
 
     return pd.DataFrame(results)
+
+
+def run_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run full ETHICS experiment (sync)."""
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/ethics_checkpoint.csv",
+        item_runner=run_single_item_ethics,
+        result_builder=build_ethics_result,
+        error_extra_fields_fn=lambda row: {'subscale': row.get('subscale', '')},
+        include_confidence=include_confidence
+    )
+
+
+def run_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run full MoralChoice experiment (sync)."""
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/moralchoice_checkpoint.csv",
+        item_runner=run_single_item_moralchoice,
+        result_builder=build_moralchoice_result,
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence
+    )
+
+
+def run_morables_experiment(sample_size=None, include_confidence=True):
+    """Run full MORABLES experiment (sync)."""
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/morables_checkpoint.csv",
+        item_runner=run_single_item_morables,
+        result_builder=build_morables_result,
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence
+    )
 
 
 # =============================================================================
@@ -542,200 +507,128 @@ def load_existing_results(checkpoint_path: str) -> list:
     return df.to_dict('records')
 
 
-async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
-    """Run ETHICS experiment asynchronously."""
-    data_path = "data/ethics_sample.csv"
-    checkpoint_path = "results/raw/ethics_checkpoint.csv"
+async def _run_experiment_async(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    results_queue: asyncio.Queue,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True,
+    resume: bool = False
+) -> List[Dict[str, Any]]:
+    """
+    Generic async experiment runner with resume support.
 
-    if not Path(data_path).exists():
-        print(f"ETHICS: {data_path} not found. Skipping.")
-        return []
+    Args:
+        benchmark_name: Name for logging and queue tagging (e.g., "ethics")
+        data: DataFrame with items to process
+        checkpoint_path: Path to checkpoint file
+        results_queue: Async queue for checkpoint writer
+        item_runner: Async function(row, level, thinking, include_confidence) -> response_data
+        result_builder: Function(row, level, thinking, run, response_data, include_confidence) -> result dict
+        include_confidence: Whether to include confidence scoring
+        resume: Whether to resume from checkpoint
 
-    ethics = pd.read_csv(data_path)
-
-    if sample_size:
-        per_subscale = sample_size // 3
-        subscales = []
-        for subscale in ['commonsense', 'deontology', 'virtue']:
-            stratum = ethics[ethics['subscale'] == subscale]
-            subset = stratum.sample(n=min(per_subscale, len(stratum)), random_state=config.RANDOM_SEED)
-            subscales.append(subset)
-        ethics = pd.concat(subscales, ignore_index=True)
-
+    Returns:
+        List of result dictionaries
+    """
     # Load existing progress if resuming
     completed = set()
     results = []
     if resume:
         completed = load_completed_from_checkpoint(checkpoint_path)
         results = load_existing_results(checkpoint_path)
-        print(f"ETHICS: Resuming with {len(completed)} items already completed")
+        print(f"{benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
 
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(ethics)
+    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(data)
     remaining = total_items - len(completed)
-    print(f"ETHICS: {len(ethics)} items, {remaining} API calls remaining")
+    print(f"{benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
 
-    with tqdm(total=total_items, initial=len(completed), desc="ETHICS", unit="item", leave=True) as pbar:
+    benchmark_key = benchmark_name.lower()
+
+    with tqdm(total=total_items, initial=len(completed), desc=benchmark_name.upper(), unit="item", leave=True) as pbar:
         for run in range(N_RUNS):
             for thinking in THINKING_CONDITIONS:
                 for level in LEVELS:
                     thinking_label = "ON" if thinking else "OFF"
                     pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
 
-                    for idx, row in ethics.iterrows():
+                    for idx, row in data.iterrows():
                         # Skip if already completed
                         key = (row['item_id'], level, thinking, run)
                         if key in completed:
                             continue
 
                         try:
-                            response_data = await run_single_item_ethics_async(row, level, thinking, include_confidence)
-                            result = build_ethics_result(row, level, thinking, run, response_data, include_confidence)
-                            result['benchmark'] = 'ethics'
+                            response_data = await item_runner(row, level, thinking, include_confidence)
+                            result = result_builder(row, level, thinking, run, response_data, include_confidence)
+                            result['benchmark'] = benchmark_key
                             results.append(result)
-                            await results_queue.put(('ethics', result))
+                            await results_queue.put((benchmark_key, result))
                         except Exception as e:
-                            print(f"\nETHICS error on {row['item_id']}: {e}")
-                            results.append({
-                                'benchmark': 'ethics',
-                                'item_id': row['item_id'],
-                                'level': level,
-                                'thinking': thinking,
-                                'run': run,
-                                'error': str(e),
-                                'timestamp': datetime.now().isoformat(),
-                            })
+                            print(f"\n{benchmark_name.upper()} error on {row['item_id']}: {e}")
+                            error_result = _build_error_result(row, level, thinking, run, e)
+                            error_result['benchmark'] = benchmark_key
+                            results.append(error_result)
                         pbar.update(1)
 
-    print(f"ETHICS: Complete with {len(results)} results")
+    print(f"{benchmark_name.upper()}: Complete with {len(results)} results")
     return results
+
+
+async def run_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment asynchronously."""
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/ethics_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_ethics_async,
+        result_builder=build_ethics_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
 
 
 async def run_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
     """Run MoralChoice experiment asynchronously."""
-    data_path = "data/moralchoice_sample.csv"
-    checkpoint_path = "results/raw/moralchoice_checkpoint.csv"
-
-    if not Path(data_path).exists():
-        print(f"MoralChoice: {data_path} not found. Skipping.")
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
         return []
 
-    mc = pd.read_csv(data_path)
-
-    if sample_size:
-        per_level = sample_size // 2
-        low_stratum = mc[mc['ambiguity'] == 'low']
-        high_stratum = mc[mc['ambiguity'] == 'high']
-        low_amb = low_stratum.sample(n=min(per_level, len(low_stratum)), random_state=config.RANDOM_SEED)
-        high_amb = high_stratum.sample(n=min(per_level, len(high_stratum)), random_state=config.RANDOM_SEED)
-        mc = pd.concat([low_amb, high_amb], ignore_index=True)
-
-    # Load existing progress if resuming
-    completed = set()
-    results = []
-    if resume:
-        completed = load_completed_from_checkpoint(checkpoint_path)
-        results = load_existing_results(checkpoint_path)
-        print(f"MoralChoice: Resuming with {len(completed)} items already completed")
-
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(mc)
-    remaining = total_items - len(completed)
-    print(f"MoralChoice: {len(mc)} items, {remaining} API calls remaining")
-
-    with tqdm(total=total_items, initial=len(completed), desc="MoralChoice", unit="item", leave=True) as pbar:
-        for run in range(N_RUNS):
-            for thinking in THINKING_CONDITIONS:
-                for level in LEVELS:
-                    thinking_label = "ON" if thinking else "OFF"
-                    pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
-
-                    for idx, row in mc.iterrows():
-                        # Skip if already completed
-                        key = (row['item_id'], level, thinking, run)
-                        if key in completed:
-                            continue
-
-                        try:
-                            response_data = await run_single_item_moralchoice_async(row, level, thinking, include_confidence)
-                            result = build_moralchoice_result(row, level, thinking, run, response_data, include_confidence)
-                            result['benchmark'] = 'moralchoice'
-                            results.append(result)
-                            await results_queue.put(('moralchoice', result))
-                        except Exception as e:
-                            print(f"\nMoralChoice error on {row['item_id']}: {e}")
-                            results.append({
-                                'benchmark': 'moralchoice',
-                                'item_id': row['item_id'],
-                                'level': level,
-                                'thinking': thinking,
-                                'run': run,
-                                'error': str(e),
-                                'timestamp': datetime.now().isoformat(),
-                            })
-                        pbar.update(1)
-
-    print(f"MoralChoice: Complete with {len(results)} results")
-    return results
+    return await _run_experiment_async(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/moralchoice_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_moralchoice_async,
+        result_builder=build_moralchoice_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
 
 
 async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
     """Run MORABLES experiment asynchronously."""
-    data_path = "data/morables/morables_sample.csv"
-    checkpoint_path = "results/raw/morables_checkpoint.csv"
-
-    if not Path(data_path).exists():
-        print(f"MORABLES: {data_path} not found. Skipping.")
+    morables = load_morables_data(sample_size)
+    if morables is None:
         return []
 
-    morables = pd.read_csv(data_path)
-    if sample_size and len(morables) > sample_size:
-        morables = morables.sample(n=sample_size, random_state=config.RANDOM_SEED)
-
-    # Load existing progress if resuming
-    completed = set()
-    results = []
-    if resume:
-        completed = load_completed_from_checkpoint(checkpoint_path)
-        results = load_existing_results(checkpoint_path)
-        print(f"MORABLES: Resuming with {len(completed)} items already completed")
-
-    total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(morables)
-    remaining = total_items - len(completed)
-    print(f"MORABLES: {len(morables)} items, {remaining} API calls remaining")
-
-    with tqdm(total=total_items, initial=len(completed), desc="MORABLES", unit="item", leave=True) as pbar:
-        for run in range(N_RUNS):
-            for thinking in THINKING_CONDITIONS:
-                for level in LEVELS:
-                    thinking_label = "ON" if thinking else "OFF"
-                    pbar.set_postfix(level=level, thinking=thinking_label, run=run+1)
-
-                    for idx, row in morables.iterrows():
-                        # Skip if already completed
-                        key = (row['item_id'], level, thinking, run)
-                        if key in completed:
-                            continue
-
-                        try:
-                            response_data = await run_single_item_morables_async(row, level, thinking, include_confidence)
-                            result = build_morables_result(row, level, thinking, run, response_data, include_confidence)
-                            result['benchmark'] = 'morables'
-                            results.append(result)
-                            await results_queue.put(('morables', result))
-                        except Exception as e:
-                            print(f"\nMORABLES error on {row['item_id']}: {e}")
-                            results.append({
-                                'benchmark': 'morables',
-                                'item_id': row['item_id'],
-                                'level': level,
-                                'thinking': thinking,
-                                'run': run,
-                                'error': str(e),
-                                'timestamp': datetime.now().isoformat(),
-                            })
-                        pbar.update(1)
-
-    print(f"MORABLES: Complete with {len(results)} results")
-    return results
+    return await _run_experiment_async(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/morables_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_morables_async,
+        result_builder=build_morables_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
 
 
 async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50, resume: bool = False):

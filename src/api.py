@@ -4,7 +4,7 @@ import anthropic
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 import config
 
 @dataclass
@@ -61,27 +61,16 @@ class AsyncRateLimiter:
 rate_limiter = AsyncRateLimiter(config.CALLS_PER_MINUTE)
 
 
-def call_claude(
+# =============================================================================
+# SHARED HELPERS (eliminate sync/async duplication)
+# =============================================================================
+
+def _build_api_kwargs(
     prompt: str,
-    thinking_enabled: bool = False,
-    max_retries: int = 3,
-    retry_delay: float = 5.0,
-    max_tokens_override: int = None
-) -> APIResponse:
-    """
-    Call Claude API with optional extended thinking (synchronous).
-
-    Args:
-        prompt: The user prompt
-        thinking_enabled: Whether to enable extended thinking
-        max_retries: Number of retries on failure
-        retry_delay: Seconds to wait between retries
-        max_tokens_override: Optional override for max_tokens (useful for Level 0)
-
-    Returns:
-        APIResponse with content, thinking, and token counts
-    """
-
+    thinking_enabled: bool,
+    max_tokens_override: Optional[int]
+) -> dict:
+    """Build kwargs dict for Claude API call."""
     # Determine max_tokens
     if max_tokens_override is not None:
         max_tokens = max_tokens_override
@@ -102,32 +91,58 @@ def call_claude(
             "type": "enabled",
             "budget_tokens": config.THINKING_BUDGET
         }
-
-    # Add temperature if not using thinking (thinking requires temperature=1)
-    if not thinking_enabled:
+    else:
+        # Add temperature only when not using thinking (thinking requires temperature=1)
         kwargs["temperature"] = config.TEMPERATURE
 
-    # Retry loop
+    return kwargs
+
+
+def _parse_response(response: Any) -> APIResponse:
+    """Parse Claude API response into APIResponse dataclass."""
+    content = ""
+    thinking = None
+
+    for block in response.content:
+        if block.type == "thinking":
+            thinking = block.thinking
+        elif block.type == "text":
+            content = block.text
+
+    return APIResponse(
+        content=content,
+        thinking=thinking,
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens
+    )
+
+
+def call_claude(
+    prompt: str,
+    thinking_enabled: bool = False,
+    max_retries: int = 3,
+    retry_delay: float = 5.0,
+    max_tokens_override: int = None
+) -> APIResponse:
+    """
+    Call Claude API with optional extended thinking (synchronous).
+
+    Args:
+        prompt: The user prompt
+        thinking_enabled: Whether to enable extended thinking
+        max_retries: Number of retries on failure
+        retry_delay: Seconds to wait between retries
+        max_tokens_override: Optional override for max_tokens (useful for Level 0)
+
+    Returns:
+        APIResponse with content, thinking, and token counts
+    """
+    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override)
+
     for attempt in range(max_retries):
         try:
             response = client.messages.create(**kwargs)
-
-            # Parse response blocks
-            content = ""
-            thinking = None
-
-            for block in response.content:
-                if block.type == "thinking":
-                    thinking = block.thinking
-                elif block.type == "text":
-                    content = block.text
-
-            return APIResponse(
-                content=content,
-                thinking=thinking,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens
-            )
+            return _parse_response(response)
 
         except anthropic.RateLimitError:
             if attempt < max_retries - 1:
@@ -167,53 +182,12 @@ async def call_claude_async(
     Returns:
         APIResponse with content, thinking, and token counts
     """
+    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override)
 
-    # Determine max_tokens
-    if max_tokens_override is not None:
-        max_tokens = max_tokens_override
-    elif thinking_enabled:
-        max_tokens = config.MAX_TOKENS_WITH_THINKING
-    else:
-        max_tokens = config.MAX_TOKENS_NO_THINKING
-
-    kwargs = {
-        "model": config.MODEL,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}]
-    }
-
-    # Add thinking configuration if enabled
-    if thinking_enabled:
-        kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": config.THINKING_BUDGET
-        }
-
-    # Add temperature if not using thinking
-    if not thinking_enabled:
-        kwargs["temperature"] = config.TEMPERATURE
-
-    # Retry loop
     for attempt in range(max_retries):
         try:
             response = await async_client.messages.create(**kwargs)
-
-            # Parse response blocks
-            content = ""
-            thinking = None
-
-            for block in response.content:
-                if block.type == "thinking":
-                    thinking = block.thinking
-                elif block.type == "text":
-                    content = block.text
-
-            return APIResponse(
-                content=content,
-                thinking=thinking,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens
-            )
+            return _parse_response(response)
 
         except anthropic.RateLimitError:
             if attempt < max_retries - 1:
