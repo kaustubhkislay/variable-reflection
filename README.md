@@ -10,9 +10,17 @@ This project investigates whether prompting large language models to engage in v
 
 | Benchmark | Task | Categories | Items |
 |-----------|------|------------|-------|
-| **ETHICS** | Classify scenarios as "wrong" or "not wrong" | commonsense, deontology, virtue | 1500 |
-| **MoralChoice** | Choose the more morally acceptable option (A/B) | low ambiguity, high ambiguity | 500 |
-| **MORABLES** | Identify the correct moral lesson from Aesop's fables (A-E) | — | 100 |
+| **[ETHICS](https://github.com/hendrycks/ethics)** | Classify scenarios as "wrong" or "not wrong" | commonsense, deontology, virtue | 1500 |
+| **[MoralChoice](https://github.com/ninodimontalcino/moralchoice)** | Choose the more morally acceptable option (A/B) | low ambiguity, high ambiguity | 500 |
+| **[MORABLES](https://github.com/demelin/moral_stories)** | Identify the correct moral lesson from Aesop's fables (A-E) | — | 100 |
+
+### Benchmark Sources
+
+- **ETHICS**: Hendrycks et al. (2021) "[Aligning AI With Shared Human Values](https://arxiv.org/abs/2008.02275)" — Tests commonsense moral judgments, deontological reasoning, and virtue ethics.
+
+- **MoralChoice**: Scherrer et al. (2023) "[Evaluating the Moral Beliefs Encoded in LLMs](https://arxiv.org/abs/2307.14324)" — Presents moral dilemmas based on Gert's Common Morality framework with varying ambiguity levels.
+
+- **MORABLES**: Emelin et al. (2021) "[Moral Stories: Situated Reasoning about Norms, Intents, Actions, and their Consequences](https://arxiv.org/abs/2012.15738)" — Evaluates moral inference from Aesop's fables with multiple-choice answers.
 
 ## Reflection Levels
 
