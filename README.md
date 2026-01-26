@@ -61,7 +61,7 @@ variable-reflection/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/variable-reflection.git
+git clone https://github.com/kaustubhkislay/variable-reflection.git
 cd variable-reflection
 
 # Create virtual environment
@@ -198,26 +198,9 @@ The notebook generates:
 
 Outputs are saved to the `outputs/` directory.
 
-## Key Research Questions
-
-1. Does increased reflection improve moral judgment accuracy?
-2. How does extended thinking interact with prompted reflection?
-3. Is there an optimal reflection level, or diminishing returns?
-4. How well-calibrated is model confidence across reflection levels?
-5. Do different moral frameworks (deontology vs virtue vs commonsense) respond differently to reflection?
 
 ## License
 
 MIT
 
-## Citation
-
-If you use this framework in your research, please cite:
-
-```bibtex
-@software{variable_reflection,
-  title = {Variable Reflection: Studying Prompted Reflection in LLM Moral Reasoning},
-  year = {2025},
-  url = {https://github.com/yourusername/variable-reflection}
-}
 ```
