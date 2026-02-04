@@ -859,10 +859,10 @@ def _run_gemini_experiment_sync(
     This isolates the effect of internal reasoning budget from prompt structure.
     """
     results = []
-    total_conditions = len(config.GEMINI_THINKING_LEVELS) * N_RUNS
+    total_conditions = len(config.GEMINI_THINKING_LEVELS) * config.GEMINI_N_RUNS
     condition_num = 0
 
-    for run in range(N_RUNS):
+    for run in range(config.GEMINI_N_RUNS):
         for thinking_level in config.GEMINI_THINKING_LEVELS:
             condition_num += 1
 
@@ -916,14 +916,14 @@ async def _run_gemini_experiment_async(
         print(f"Gemini {benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
 
     # Gemini: iterate over thinking_levels, not prompt levels
-    total_items = N_RUNS * len(config.GEMINI_THINKING_LEVELS) * len(data)
+    total_items = config.GEMINI_N_RUNS * len(config.GEMINI_THINKING_LEVELS) * len(data)
     remaining = total_items - len(completed)
     print(f"Gemini {benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
 
     benchmark_key = f"gemini_{benchmark_name.lower()}"
 
     with tqdm(total=total_items, initial=len(completed), desc=f"Gemini {benchmark_name.upper()}", unit="item", leave=True) as pbar:
-        for run in range(N_RUNS):
+        for run in range(config.GEMINI_N_RUNS):
             for thinking_level in config.GEMINI_THINKING_LEVELS:
                 pbar.set_postfix(thinking=thinking_level, run=run+1)
 
@@ -1136,13 +1136,14 @@ def run_sync(args):
     print(f"Start time: {start_time}")
     if args.gemini:
         print(f"Model: Gemini 3 Flash")
-        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (CoT)")
+        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (Direct intuition)")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
+        print(f"Runs: {config.GEMINI_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
         print(f"Levels: {LEVELS}")
-    print(f"Runs: {N_RUNS}")
+        print(f"Runs: {N_RUNS}")
     print(f"Sample size: {args.sample_size}")
 
     # Create output directories
@@ -1231,13 +1232,14 @@ async def run_async(args):
     print(f"Start time: {start_time}")
     if args.gemini:
         print(f"Model: Gemini 3 Flash")
-        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (CoT)")
+        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (Direct intuition)")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
+        print(f"Runs: {config.GEMINI_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
         print(f"Levels: {LEVELS}")
-    print(f"Runs: {N_RUNS}")
+        print(f"Runs: {N_RUNS}")
     print(f"Sample size: {args.sample_size}")
     print(f"Rate limit: {config.CALLS_PER_MINUTE}/min")
     print(f"Resume mode: {args.resume}")

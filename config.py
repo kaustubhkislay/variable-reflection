@@ -22,6 +22,7 @@ TEMPERATURE = 0  # Deterministic for reproducibility
 GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"]
 GEMINI_PROMPT_LEVEL = 0  # Direct intuition prompts for Gemini
 GEMINI_MAX_TOKENS = 4000
+GEMINI_N_RUNS = 1  # Number of runs for Gemini experiments
 
 # Paths
 DATA_DIR = "data"
