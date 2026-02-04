@@ -38,6 +38,15 @@ from src.extraction import (
     count_reasoning_markers,
     count_uncertainty_markers
 )
+from src.gemini_api import (
+    call_gemini_with_rate_limit,
+    call_gemini_with_rate_limit_async,
+    validate_thinking_level,
+    reset_gemini_rate_limiter,
+    get_gemini_rate_stats,
+    is_gemini_available,
+    GeminiResponse
+)
 import config
 
 
@@ -196,6 +205,115 @@ def run_single_item_morables(row, level, thinking, include_confidence=True):
                row['option_d'], row['option_e']]
     return _run_single_item_sync(
         get_morables_prompt, level, thinking, include_confidence,
+        fable=row['fable'], options=options
+    )
+
+
+# =============================================================================
+# GEMINI SINGLE ITEM RUNNERS
+# =============================================================================
+
+def _build_gemini_response_data(response1, response2=None):
+    """Build standardized response data dict from Gemini API response(s)."""
+    if response2 is not None:
+        # Two-pass (Level 5)
+        return {
+            'content': response2.content,
+            'thinking': response2.thinking,
+            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
+            'input_tokens': response1.input_tokens + response2.input_tokens,
+            'output_tokens': response1.output_tokens + response2.output_tokens,
+        }
+    else:
+        # Single pass
+        return {
+            'content': response1.content,
+            'thinking': response1.thinking,
+            'full_response': response1.content,
+            'input_tokens': response1.input_tokens,
+            'output_tokens': response1.output_tokens,
+        }
+
+
+async def _run_single_item_gemini_async(prompt_fn, thinking_level, include_confidence, **prompt_kwargs):
+    """
+    Generic async single-item runner for Gemini.
+
+    Uses a fixed CoT prompt (level 2) while varying Gemini's thinking_level parameter.
+    This isolates the effect of Gemini's internal reasoning budget from prompt structure.
+    """
+    # Always use level 2 (Chain-of-thought) prompts for Gemini experiments
+    prompt = prompt_fn(config.GEMINI_PROMPT_LEVEL, **prompt_kwargs, include_confidence=include_confidence)
+    response = await call_gemini_with_rate_limit_async(prompt, thinking_level)
+
+    return _build_gemini_response_data(response)
+
+
+def _run_single_item_gemini_sync(prompt_fn, thinking_level, include_confidence, **prompt_kwargs):
+    """
+    Generic sync single-item runner for Gemini.
+
+    Uses a fixed CoT prompt (level 2) while varying Gemini's thinking_level parameter.
+    """
+    # Always use level 2 (Chain-of-thought) prompts for Gemini experiments
+    prompt = prompt_fn(config.GEMINI_PROMPT_LEVEL, **prompt_kwargs, include_confidence=include_confidence)
+    response = call_gemini_with_rate_limit(prompt, thinking_level)
+
+    return _build_gemini_response_data(response)
+
+
+# Gemini benchmark-specific runners (async)
+
+async def run_single_item_ethics_gemini_async(row, thinking_level, include_confidence=True):
+    """Run single ETHICS item with Gemini (async)."""
+    return await _run_single_item_gemini_async(
+        get_ethics_prompt, thinking_level, include_confidence,
+        scenario=row['scenario']
+    )
+
+
+async def run_single_item_moralchoice_gemini_async(row, thinking_level, include_confidence=True):
+    """Run single MoralChoice item with Gemini (async)."""
+    return await _run_single_item_gemini_async(
+        get_moralchoice_prompt, thinking_level, include_confidence,
+        context=row['context'], option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+async def run_single_item_morables_gemini_async(row, thinking_level, include_confidence=True):
+    """Run single MORABLES item with Gemini (async)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return await _run_single_item_gemini_async(
+        get_morables_prompt, thinking_level, include_confidence,
+        fable=row['fable'], options=options
+    )
+
+
+# Gemini benchmark-specific runners (sync)
+
+def run_single_item_ethics_gemini(row, thinking_level, include_confidence=True):
+    """Run single ETHICS item with Gemini (sync)."""
+    return _run_single_item_gemini_sync(
+        get_ethics_prompt, thinking_level, include_confidence,
+        scenario=row['scenario']
+    )
+
+
+def run_single_item_moralchoice_gemini(row, thinking_level, include_confidence=True):
+    """Run single MoralChoice item with Gemini (sync)."""
+    return _run_single_item_gemini_sync(
+        get_moralchoice_prompt, thinking_level, include_confidence,
+        context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+def run_single_item_morables_gemini(row, thinking_level, include_confidence=True):
+    """Run single MORABLES item with Gemini (sync)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return _run_single_item_gemini_sync(
+        get_morables_prompt, thinking_level, include_confidence,
         fable=row['fable'], options=options
     )
 
@@ -631,10 +749,350 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
     )
 
 
+# =============================================================================
+# GEMINI EXPERIMENT RUNNERS
+# =============================================================================
+
+def build_gemini_ethics_result(row, thinking_level, run, response_data, include_confidence):
+    """Build result dict for ETHICS item (Gemini version - uses thinking_level directly)."""
+    extracted = extract_ethics_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == row['label']) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'subscale': row.get('subscale', ''),
+        'scenario': row['scenario'][:200],
+        'label': row['label'],
+        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'thinking_level': thinking_level,
+        'model': 'gemini-3-flash',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gemini_moralchoice_result(row, thinking_level, run, response_data, include_confidence):
+    """Build result dict for MoralChoice item (Gemini version)."""
+    extraction = extract_moralchoice_with_confidence(response_data['content'])
+
+    return {
+        'item_id': row['item_id'],
+        'context': row['context'][:200],
+        'option_a': row['option_a'][:100],
+        'option_b': row['option_b'][:100],
+        'ambiguity': row.get('ambiguity', None),
+        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'thinking_level': thinking_level,
+        'model': 'gemini-3-flash',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extraction['answer'],
+        'confidence': extraction['confidence'],
+        'confidence_category': extraction['confidence_category'],
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gemini_morables_result(row, thinking_level, run, response_data, include_confidence):
+    """Build result dict for MORABLES item (Gemini version)."""
+    extracted = extract_morables_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+
+    letter_to_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+    extracted_idx = letter_to_idx.get(extracted)
+    correct = extracted_idx == row['correct_idx'] if extracted_idx is not None else None
+
+    return {
+        'item_id': row['item_id'],
+        'fable': row['fable'][:200],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B', 'C', 'D', 'E'][row['correct_idx']],
+        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'thinking_level': thinking_level,
+        'model': 'gemini-3-flash',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def _run_gemini_experiment_sync(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True
+) -> pd.DataFrame:
+    """
+    Generic sync Gemini experiment runner.
+
+    Uses fixed CoT prompts (level 2) while varying Gemini's thinking_level parameter.
+    This isolates the effect of internal reasoning budget from prompt structure.
+    """
+    results = []
+    total_conditions = len(config.GEMINI_THINKING_LEVELS) * N_RUNS
+    condition_num = 0
+
+    for run in range(N_RUNS):
+        for thinking_level in config.GEMINI_THINKING_LEVELS:
+            condition_num += 1
+
+            print(f"\n[{condition_num}/{total_conditions}] "
+                  f"Gemini {benchmark_name} Run {run+1}, thinking_level={thinking_level}")
+
+            for _, row in tqdm(data.iterrows(), total=len(data),
+                               desc=f"R{run+1}-{thinking_level}"):
+                try:
+                    response_data = item_runner(row, thinking_level, include_confidence)
+                    results.append(result_builder(row, thinking_level, run, response_data, include_confidence))
+                except Exception as e:
+                    print(f"Error on item {row['item_id']}: {e}")
+                    results.append({
+                        'item_id': row['item_id'],
+                        'prompt_level': config.GEMINI_PROMPT_LEVEL,
+                        'thinking_level': thinking_level,
+                        'model': 'gemini-3-flash',
+                        'run': run,
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat(),
+                    })
+
+            # Checkpoint after each condition
+            pd.DataFrame(results).to_csv(checkpoint_path, index=False)
+
+    return pd.DataFrame(results)
+
+
+async def _run_gemini_experiment_async(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    results_queue: asyncio.Queue,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True,
+    resume: bool = False
+) -> List[Dict[str, Any]]:
+    """
+    Generic async Gemini experiment runner with resume support.
+
+    Uses fixed CoT prompts (level 2) while varying Gemini's thinking_level parameter.
+    """
+    # Load existing progress if resuming
+    completed = set()
+    results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"Gemini {benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
+
+    # Gemini: iterate over thinking_levels, not prompt levels
+    total_items = N_RUNS * len(config.GEMINI_THINKING_LEVELS) * len(data)
+    remaining = total_items - len(completed)
+    print(f"Gemini {benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
+
+    benchmark_key = f"gemini_{benchmark_name.lower()}"
+
+    with tqdm(total=total_items, initial=len(completed), desc=f"Gemini {benchmark_name.upper()}", unit="item", leave=True) as pbar:
+        for run in range(N_RUNS):
+            for thinking_level in config.GEMINI_THINKING_LEVELS:
+                pbar.set_postfix(thinking=thinking_level, run=run+1)
+
+                for idx, row in data.iterrows():
+                    # Skip if already completed (use thinking_level as key instead of level)
+                    key = (row['item_id'], thinking_level, None, run)
+                    if key in completed:
+                        continue
+
+                    try:
+                        response_data = await item_runner(row, thinking_level, include_confidence)
+                        result = result_builder(row, thinking_level, run, response_data, include_confidence)
+                        result['benchmark'] = benchmark_key
+                        results.append(result)
+                        await results_queue.put((benchmark_key, result))
+                    except Exception as e:
+                        print(f"\nGemini {benchmark_name.upper()} error on {row['item_id']}: {e}")
+                        error_result = {
+                            'item_id': row['item_id'],
+                            'prompt_level': config.GEMINI_PROMPT_LEVEL,
+                            'thinking_level': thinking_level,
+                            'model': 'gemini-3-flash',
+                            'run': run,
+                            'error': str(e),
+                            'benchmark': benchmark_key,
+                            'timestamp': datetime.now().isoformat(),
+                        }
+                        results.append(error_result)
+                    pbar.update(1)
+
+    print(f"Gemini {benchmark_name.upper()}: Complete with {len(results)} results")
+    return results
+
+
+# Gemini experiment entry points (sync)
+
+def run_gemini_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run full ETHICS experiment with Gemini (sync)."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return None
+
+    return _run_gemini_experiment_sync(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/gemini_ethics_checkpoint.csv",
+        item_runner=run_single_item_ethics_gemini,
+        result_builder=build_gemini_ethics_result,
+        include_confidence=include_confidence
+    )
+
+
+def run_gemini_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run full MoralChoice experiment with Gemini (sync)."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return None
+
+    return _run_gemini_experiment_sync(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/gemini_moralchoice_checkpoint.csv",
+        item_runner=run_single_item_moralchoice_gemini,
+        result_builder=build_gemini_moralchoice_result,
+        include_confidence=include_confidence
+    )
+
+
+def run_gemini_morables_experiment(sample_size=None, include_confidence=True):
+    """Run full MORABLES experiment with Gemini (sync)."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return None
+
+    return _run_gemini_experiment_sync(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/gemini_morables_checkpoint.csv",
+        item_runner=run_single_item_morables_gemini,
+        result_builder=build_gemini_morables_result,
+        include_confidence=include_confidence
+    )
+
+
+# Gemini experiment entry points (async)
+
+async def run_gemini_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Gemini asynchronously."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return []
+
+    return await _run_gemini_experiment_async(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/gemini_ethics_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_ethics_gemini_async,
+        result_builder=build_gemini_ethics_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+async def run_gemini_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Gemini asynchronously."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return []
+
+    return await _run_gemini_experiment_async(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/gemini_moralchoice_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_moralchoice_gemini_async,
+        result_builder=build_gemini_moralchoice_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+async def run_gemini_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Gemini asynchronously."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return []
+
+    return await _run_gemini_experiment_async(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/gemini_morables_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_morables_gemini_async,
+        result_builder=build_gemini_morables_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
 async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50, resume: bool = False):
     """Background task to write checkpoints as results come in."""
     # Load existing results if resuming
-    all_results = {'ethics': [], 'moralchoice': [], 'morables': []}
+    all_results = {'ethics': [], 'moralchoice': [], 'morables': [],
+                   'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': []}
     if resume:
         for bm in all_results.keys():
             all_results[bm] = load_existing_results(f"results/raw/{bm}_checkpoint.csv")
@@ -676,9 +1134,14 @@ def run_sync(args):
     print("STARTING EXPERIMENT (Sync Mode)")
     print("=" * 60)
     print(f"Start time: {start_time}")
-    print(f"Model: {config.MODEL}")
-    print(f"Levels: {LEVELS}")
-    print(f"Thinking conditions: {THINKING_CONDITIONS}")
+    if args.gemini:
+        print(f"Model: Gemini 3 Flash")
+        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (CoT)")
+        print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
+    else:
+        print(f"Model: {config.MODEL}")
+        print(f"Thinking conditions: {THINKING_CONDITIONS}")
+        print(f"Levels: {LEVELS}")
     print(f"Runs: {N_RUNS}")
     print(f"Sample size: {args.sample_size}")
 
@@ -686,37 +1149,68 @@ def run_sync(args):
     Path("results/raw").mkdir(parents=True, exist_ok=True)
     Path("results/processed").mkdir(parents=True, exist_ok=True)
 
-    # Run ETHICS
-    if args.ethics:
-        print("\n" + "=" * 60)
-        print("RUNNING ETHICS EXPERIMENT")
-        print("=" * 60)
-        ethics_results = run_ethics_experiment(args.sample_size, args.confidence)
-        ethics_results.to_csv("results/processed/ethics_results.csv", index=False)
-        print(f"\nETHICS complete: {len(ethics_results)} observations")
+    if args.gemini:
+        # Run Gemini experiments
+        if args.ethics:
+            print("\n" + "=" * 60)
+            print("RUNNING GEMINI ETHICS EXPERIMENT")
+            print("=" * 60)
+            ethics_results = run_gemini_ethics_experiment(args.sample_size, args.confidence)
+            if ethics_results is not None:
+                ethics_results.to_csv("results/processed/gemini_ethics_results.csv", index=False)
+                print(f"\nGemini ETHICS complete: {len(ethics_results)} observations")
 
-    # Run MoralChoice
-    if args.moralchoice:
-        print("\n" + "=" * 60)
-        print("RUNNING MORALCHOICE EXPERIMENT")
-        print("=" * 60)
-        mc_results = run_moralchoice_experiment(args.sample_size, args.confidence)
-        mc_results.to_csv("results/processed/moralchoice_results.csv", index=False)
-        print(f"\nMoralChoice complete: {len(mc_results)} observations")
+        if args.moralchoice:
+            print("\n" + "=" * 60)
+            print("RUNNING GEMINI MORALCHOICE EXPERIMENT")
+            print("=" * 60)
+            mc_results = run_gemini_moralchoice_experiment(args.sample_size, args.confidence)
+            if mc_results is not None:
+                mc_results.to_csv("results/processed/gemini_moralchoice_results.csv", index=False)
+                print(f"\nGemini MoralChoice complete: {len(mc_results)} observations")
 
-    # Run MORABLES
-    if args.morables:
-        print("\n" + "=" * 60)
-        print("RUNNING MORABLES EXPERIMENT")
-        print("=" * 60)
-        morables_results = run_morables_experiment(args.sample_size, args.confidence)
-        if morables_results is not None:
-            morables_results.to_csv("results/processed/morables_results.csv", index=False)
-            print(f"\nMORABLES complete: {len(morables_results)} observations")
+        if args.morables:
+            print("\n" + "=" * 60)
+            print("RUNNING GEMINI MORABLES EXPERIMENT")
+            print("=" * 60)
+            morables_results = run_gemini_morables_experiment(args.sample_size, args.confidence)
+            if morables_results is not None:
+                morables_results.to_csv("results/processed/gemini_morables_results.csv", index=False)
+                print(f"\nGemini MORABLES complete: {len(morables_results)} observations")
 
-            valid_results = morables_results[morables_results['correct'].notna()]
-            if len(valid_results) > 0:
-                print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+                valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+    else:
+        # Run Claude experiments
+        if args.ethics:
+            print("\n" + "=" * 60)
+            print("RUNNING ETHICS EXPERIMENT")
+            print("=" * 60)
+            ethics_results = run_ethics_experiment(args.sample_size, args.confidence)
+            ethics_results.to_csv("results/processed/ethics_results.csv", index=False)
+            print(f"\nETHICS complete: {len(ethics_results)} observations")
+
+        if args.moralchoice:
+            print("\n" + "=" * 60)
+            print("RUNNING MORALCHOICE EXPERIMENT")
+            print("=" * 60)
+            mc_results = run_moralchoice_experiment(args.sample_size, args.confidence)
+            mc_results.to_csv("results/processed/moralchoice_results.csv", index=False)
+            print(f"\nMoralChoice complete: {len(mc_results)} observations")
+
+        if args.morables:
+            print("\n" + "=" * 60)
+            print("RUNNING MORABLES EXPERIMENT")
+            print("=" * 60)
+            morables_results = run_morables_experiment(args.sample_size, args.confidence)
+            if morables_results is not None:
+                morables_results.to_csv("results/processed/morables_results.csv", index=False)
+                print(f"\nMORABLES complete: {len(morables_results)} observations")
+
+                valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
     end_time = datetime.now()
     duration = end_time - start_time
@@ -735,9 +1229,14 @@ async def run_async(args):
     print("STARTING EXPERIMENT (Async Mode - Parallel Datasets)")
     print("=" * 60)
     print(f"Start time: {start_time}")
-    print(f"Model: {config.MODEL}")
-    print(f"Levels: {LEVELS}")
-    print(f"Thinking conditions: {THINKING_CONDITIONS}")
+    if args.gemini:
+        print(f"Model: Gemini 3 Flash")
+        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (CoT)")
+        print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
+    else:
+        print(f"Model: {config.MODEL}")
+        print(f"Thinking conditions: {THINKING_CONDITIONS}")
+        print(f"Levels: {LEVELS}")
     print(f"Runs: {N_RUNS}")
     print(f"Sample size: {args.sample_size}")
     print(f"Rate limit: {config.CALLS_PER_MINUTE}/min")
@@ -750,7 +1249,10 @@ async def run_async(args):
 
     # Reset rate limiter (unless resuming, to preserve stats)
     if not args.resume:
-        reset_rate_limiter()
+        if args.gemini:
+            reset_gemini_rate_limiter()
+        else:
+            reset_rate_limiter()
 
     # Results queue for checkpoint writing
     results_queue = asyncio.Queue()
@@ -760,14 +1262,32 @@ async def run_async(args):
 
     # Build list of experiment tasks
     tasks = []
-    if args.ethics:
-        tasks.append(run_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
-    if args.moralchoice:
-        tasks.append(run_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
-    if args.morables:
-        tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+    task_names = []
+    if args.gemini:
+        # Gemini experiments
+        if args.ethics:
+            tasks.append(run_gemini_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gemini_ethics')
+        if args.moralchoice:
+            tasks.append(run_gemini_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gemini_moralchoice')
+        if args.morables:
+            tasks.append(run_gemini_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gemini_morables')
+    else:
+        # Claude experiments
+        if args.ethics:
+            tasks.append(run_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('ethics')
+        if args.moralchoice:
+            tasks.append(run_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('moralchoice')
+        if args.morables:
+            tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('morables')
 
-    print(f"Running {len(tasks)} benchmark(s) in parallel...")
+    model_name = "Gemini 3 Flash" if args.gemini else "Claude"
+    print(f"Running {len(tasks)} {model_name} benchmark(s) in parallel...")
     print()
 
     # Run all experiments concurrently
@@ -781,50 +1301,35 @@ async def run_async(args):
         pass
 
     # Process results
-    task_idx = 0
+    prefix = "gemini_" if args.gemini else ""
+    model_label = "Gemini " if args.gemini else ""
 
-    if args.ethics:
-        if isinstance(results[task_idx], Exception):
-            print(f"ETHICS failed with error: {results[task_idx]}")
+    for i, task_name in enumerate(task_names):
+        if isinstance(results[i], Exception):
+            print(f"{model_label}{task_name.upper()} failed with error: {results[i]}")
         else:
-            ethics_results = results[task_idx]
-            if ethics_results:
-                pd.DataFrame(ethics_results).to_csv("results/processed/ethics_results.csv", index=False)
-                print(f"ETHICS: Saved {len(ethics_results)} results")
-        task_idx += 1
+            task_results = results[i]
+            if task_results:
+                output_file = f"results/processed/{prefix}{task_name.replace('gemini_', '')}_results.csv"
+                pd.DataFrame(task_results).to_csv(output_file, index=False)
+                print(f"{model_label}{task_name.upper()}: Saved {len(task_results)} results")
 
-    if args.moralchoice:
-        if isinstance(results[task_idx], Exception):
-            print(f"MoralChoice failed with error: {results[task_idx]}")
-        else:
-            mc_results = results[task_idx]
-            if mc_results:
-                pd.DataFrame(mc_results).to_csv("results/processed/moralchoice_results.csv", index=False)
-                print(f"MoralChoice: Saved {len(mc_results)} results")
-        task_idx += 1
-
-    if args.morables:
-        if isinstance(results[task_idx], Exception):
-            print(f"MORABLES failed with error: {results[task_idx]}")
-        else:
-            morables_results = results[task_idx]
-            if morables_results:
-                pd.DataFrame(morables_results).to_csv("results/processed/morables_results.csv", index=False)
-                print(f"MORABLES: Saved {len(morables_results)} results")
-
-                df = pd.DataFrame(morables_results)
-                valid = df[df['correct'].notna()]
-                if len(valid) > 0:
-                    print(f"  MORABLES accuracy: {valid['correct'].mean():.3f}")
+                # Print accuracy for benchmarks with ground truth
+                df = pd.DataFrame(task_results)
+                if 'correct' in df.columns:
+                    valid = df[df['correct'].notna()]
+                    if len(valid) > 0:
+                        print(f"  {task_name.upper()} accuracy: {valid['correct'].mean():.3f}")
 
     end_time = datetime.now()
     duration = end_time - start_time
-    stats = get_rate_stats()
+    stats = get_gemini_rate_stats() if args.gemini else get_rate_stats()
 
     print()
     print("=" * 60)
     print("EXPERIMENT COMPLETE")
     print("=" * 60)
+    print(f"Model: {'Gemini 3 Flash' if args.gemini else config.MODEL}")
     print(f"Duration: {duration}")
     print(f"Total API calls: {stats['calls']}")
     print(f"Effective rate: {stats['rate']} calls/min")
@@ -836,12 +1341,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_experiment.py                    # Run all benchmarks (sync)
-  python run_experiment.py --async            # Run all benchmarks (async, ~2.5x faster)
+  python run_experiment.py                    # Run all benchmarks with Claude (sync)
+  python run_experiment.py --async            # Run all benchmarks with Claude (async)
+  python run_experiment.py --gemini           # Run all benchmarks with Gemini 3 Flash
+  python run_experiment.py --gemini --async   # Run Gemini experiments (async)
   python run_experiment.py --ethics           # Run only ETHICS
   python run_experiment.py --async --morables # Run only MORABLES (async)
   python run_experiment.py --sample 50        # Use 50 items per benchmark
   python run_experiment.py --async --resume   # Resume from checkpoints
+
+Gemini Experiments:
+  Uses fixed Chain-of-Thought prompts (level 2) while varying Gemini's
+  thinking_level parameter. This isolates the effect of internal reasoning
+  budget from prompt structure.
+
+  Thinking levels tested: minimal, low, medium, high
         """
     )
 
@@ -853,6 +1367,10 @@ Examples:
                         help='Disable confidence scoring')
     parser.add_argument('--resume', action='store_true',
                         help='Resume from existing checkpoints (async mode only)')
+
+    # Model selection
+    parser.add_argument('--gemini', action='store_true',
+                        help='Use Gemini 3 Flash with CoT prompts, varying thinking_level')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true', help='Run ETHICS benchmark')
@@ -866,6 +1384,13 @@ Examples:
         args.ethics = True
         args.moralchoice = True
         args.morables = True
+
+    # Check Gemini availability if requested
+    if args.gemini and not is_gemini_available():
+        print("ERROR: Gemini via OpenRouter not available.")
+        print("  1. Ensure openai package is installed (already in requirements.txt)")
+        print("  2. Set OPENROUTER_API_KEY in your .env file")
+        return
 
     # Handle sample_size=0 as None (full dataset)
     if args.sample_size == 0:
