@@ -20,7 +20,7 @@ TEMPERATURE = 0  # Deterministic for reproducibility
 # Gemini Experiment Parameters
 # Gemini experiments use a fixed CoT prompt (level 2) while varying thinking_level
 GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"]
-GEMINI_PROMPT_LEVEL = 2  # Always use Chain-of-thought prompts for Gemini
+GEMINI_PROMPT_LEVEL = 0  # Direct intuition prompts for Gemini
 GEMINI_MAX_TOKENS = 4000
 
 # Paths
