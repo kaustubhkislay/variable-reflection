@@ -9,6 +9,7 @@ MODEL = CLAUDE_MODEL  # Default model (backwards compatibility)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_MODEL = "google/gemini-3-flash-preview"  # OpenRouter model ID
+GEMINI_PRO_MODEL = "google/gemini-3-pro-preview"  # OpenRouter model ID
 GPT_MODEL = "openai/gpt-5.2"  # OpenRouter model ID
 
 # Claude Experiment Parameters

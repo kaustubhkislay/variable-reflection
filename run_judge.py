@@ -36,6 +36,11 @@ SOURCE_FILES = {
         'moralchoice': 'results/processed/gemini_moralchoice_results.csv',
         'morables': 'results/processed/gemini_morables_results.csv',
     },
+    'gemini_pro': {
+        'ethics': 'results/processed/gemini_pro_ethics_results.csv',
+        'moralchoice': 'results/processed/gemini_pro_moralchoice_results.csv',
+        'morables': 'results/processed/gemini_pro_morables_results.csv',
+    },
     'gpt': {
         'ethics': 'results/processed/gpt_ethics_results.csv',
         'moralchoice': 'results/processed/gpt_moralchoice_results.csv',
@@ -212,10 +217,12 @@ async def run_judge_async(args):
         sources.append('claude')
     if args.gemini:
         sources.append('gemini')
+    if args.gemini_pro:
+        sources.append('gemini_pro')
     if args.gpt:
         sources.append('gpt')
     if not sources:
-        sources = ['claude', 'gemini', 'gpt']
+        sources = ['claude', 'gemini', 'gemini_pro', 'gpt']
 
     benchmarks = []
     if args.ethics:
@@ -280,9 +287,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_judge.py                    # Judge all benchmarks (Claude + Gemini + GPT)
+  python run_judge.py                    # Judge all benchmarks (all models)
   python run_judge.py --claude           # Judge only Claude results
-  python run_judge.py --gemini           # Judge only Gemini results
+  python run_judge.py --gemini           # Judge only Gemini Flash results
+  python run_judge.py --gemini-pro       # Judge only Gemini Pro results
   python run_judge.py --gpt             # Judge only GPT results
   python run_judge.py --ethics           # Judge only ethics benchmark
   python run_judge.py --resume           # Resume from checkpoint
@@ -300,6 +308,8 @@ Examples:
                         help='Judge only Claude experiment results')
     parser.add_argument('--gemini', action='store_true',
                         help='Judge only Gemini experiment results')
+    parser.add_argument('--gemini-pro', dest='gemini_pro', action='store_true',
+                        help='Judge only Gemini Pro experiment results')
     parser.add_argument('--gpt', action='store_true',
                         help='Judge only GPT experiment results')
 
