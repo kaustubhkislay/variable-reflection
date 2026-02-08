@@ -9,6 +9,7 @@ MODEL = CLAUDE_MODEL  # Default model (backwards compatibility)
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_MODEL = "google/gemini-3-flash-preview"  # OpenRouter model ID
+GPT_MODEL = "openai/gpt-5.2"  # OpenRouter model ID
 
 # Claude Experiment Parameters
 THINKING_BUDGET = 2000
@@ -23,6 +24,12 @@ GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"]
 GEMINI_PROMPT_LEVELS = [0, 2, 4, 5]  # All prompting styles
 GEMINI_MAX_TOKENS = 4000
 GEMINI_N_RUNS = 1  # Number of runs for Gemini experiments
+
+# GPT Experiment Parameters
+GPT_THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh"]
+GPT_PROMPT_LEVELS = [0, 2, 4, 5]  # All prompting styles
+GPT_MAX_TOKENS = 4000
+GPT_N_RUNS = 1  # Number of runs for GPT experiments
 
 # Paths
 DATA_DIR = "data"

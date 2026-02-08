@@ -35,6 +35,11 @@ SOURCE_FILES = {
         'ethics': 'results/processed/gemini_ethics_results.csv',
         'moralchoice': 'results/processed/gemini_moralchoice_results.csv',
         'morables': 'results/processed/gemini_morables_results.csv',
+    },
+    'gpt': {
+        'ethics': 'results/processed/gpt_ethics_results.csv',
+        'moralchoice': 'results/processed/gpt_moralchoice_results.csv',
+        'morables': 'results/processed/gpt_morables_results.csv',
     }
 }
 
@@ -53,14 +58,14 @@ def _checkpoint_path(source: str, benchmark: str) -> str:
     """Get checkpoint file path."""
     if source == 'claude':
         return f"results/raw/judge_{benchmark}_checkpoint.csv"
-    return f"results/raw/judge_gemini_{benchmark}_checkpoint.csv"
+    return f"results/raw/judge_{source}_{benchmark}_checkpoint.csv"
 
 
 def _output_path(source: str, benchmark: str) -> str:
     """Get final output file path."""
     if source == 'claude':
         return f"results/processed/judge_{benchmark}_results.csv"
-    return f"results/processed/judge_gemini_{benchmark}_results.csv"
+    return f"results/processed/judge_{source}_{benchmark}_results.csv"
 
 
 def load_completed_keys(checkpoint_path: str, source: str) -> set:
@@ -207,8 +212,10 @@ async def run_judge_async(args):
         sources.append('claude')
     if args.gemini:
         sources.append('gemini')
+    if args.gpt:
+        sources.append('gpt')
     if not sources:
-        sources = ['claude', 'gemini']
+        sources = ['claude', 'gemini', 'gpt']
 
     benchmarks = []
     if args.ethics:
@@ -273,9 +280,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_judge.py                    # Judge all benchmarks (Claude + Gemini)
+  python run_judge.py                    # Judge all benchmarks (Claude + Gemini + GPT)
   python run_judge.py --claude           # Judge only Claude results
   python run_judge.py --gemini           # Judge only Gemini results
+  python run_judge.py --gpt             # Judge only GPT results
   python run_judge.py --ethics           # Judge only ethics benchmark
   python run_judge.py --resume           # Resume from checkpoint
   python run_judge.py --dry-run          # Count rows, estimate cost
@@ -292,6 +300,8 @@ Examples:
                         help='Judge only Claude experiment results')
     parser.add_argument('--gemini', action='store_true',
                         help='Judge only Gemini experiment results')
+    parser.add_argument('--gpt', action='store_true',
+                        help='Judge only GPT experiment results')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true',

@@ -47,6 +47,12 @@ from src.gemini_api import (
     is_gemini_available,
     GeminiResponse
 )
+from src.gpt_api import (
+    call_gpt_with_rate_limit,
+    call_gpt_with_rate_limit_async,
+    is_gpt_available,
+    GPTResponse
+)
 import config
 
 
@@ -338,6 +344,130 @@ def run_single_item_morables_gemini(row, prompt_level, thinking_level, include_c
 
 
 # =============================================================================
+# GPT SINGLE ITEM RUNNERS
+# =============================================================================
+
+def _build_gpt_response_data(response1, response2=None):
+    """Build standardized response data dict from GPT API response(s)."""
+    if response2 is not None:
+        return {
+            'content': response2.content,
+            'thinking': response2.thinking,
+            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
+            'input_tokens': response1.input_tokens + response2.input_tokens,
+            'output_tokens': response1.output_tokens + response2.output_tokens,
+        }
+    else:
+        return {
+            'content': response1.content,
+            'thinking': response1.thinking,
+            'full_response': response1.content,
+            'input_tokens': response1.input_tokens,
+            'output_tokens': response1.output_tokens,
+        }
+
+
+async def _run_single_item_gpt_async(prompt_fn, prompt_level, thinking_level, include_confidence, **prompt_kwargs):
+    """
+    Generic async single-item runner for GPT.
+
+    Varies both prompt_level and thinking_level parameters.
+    """
+    if prompt_level == 5:
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = await call_gpt_with_rate_limit_async(prompt1, thinking_level)
+
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = await call_gpt_with_rate_limit_async(prompt2, thinking_level)
+
+        return _build_gpt_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = await call_gpt_with_rate_limit_async(prompt, thinking_level)
+
+        return _build_gpt_response_data(response)
+
+
+def _run_single_item_gpt_sync(prompt_fn, prompt_level, thinking_level, include_confidence, **prompt_kwargs):
+    """
+    Generic sync single-item runner for GPT.
+
+    Varies both prompt_level and thinking_level parameters.
+    """
+    if prompt_level == 5:
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = call_gpt_with_rate_limit(prompt1, thinking_level)
+
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = call_gpt_with_rate_limit(prompt2, thinking_level)
+
+        return _build_gpt_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = call_gpt_with_rate_limit(prompt, thinking_level)
+
+        return _build_gpt_response_data(response)
+
+
+# GPT benchmark-specific runners (async)
+
+async def run_single_item_ethics_gpt_async(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single ETHICS item with GPT (async)."""
+    return await _run_single_item_gpt_async(
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
+        scenario=row['scenario']
+    )
+
+
+async def run_single_item_moralchoice_gpt_async(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MoralChoice item with GPT (async)."""
+    return await _run_single_item_gpt_async(
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
+        context=row['context'], option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+async def run_single_item_morables_gpt_async(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MORABLES item with GPT (async)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return await _run_single_item_gpt_async(
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
+        fable=row['fable'], options=options
+    )
+
+
+# GPT benchmark-specific runners (sync)
+
+def run_single_item_ethics_gpt(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single ETHICS item with GPT (sync)."""
+    return _run_single_item_gpt_sync(
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
+        scenario=row['scenario']
+    )
+
+
+def run_single_item_moralchoice_gpt(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MoralChoice item with GPT (sync)."""
+    return _run_single_item_gpt_sync(
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
+        context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+def run_single_item_morables_gpt(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MORABLES item with GPT (sync)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return _run_single_item_gpt_sync(
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
+        fable=row['fable'], options=options
+    )
+
+
+# =============================================================================
 # RESULT BUILDERS
 # =============================================================================
 
@@ -413,6 +543,99 @@ def build_morables_result(row, level, thinking, run, response_data, include_conf
         'correct_answer': ['A', 'B', 'C', 'D', 'E'][row['correct_idx']],
         'level': level,
         'thinking': thinking,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+# GPT result builders
+
+def build_gpt_ethics_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
+    """Build result dict for ETHICS item (GPT version)."""
+    extracted = extract_ethics_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == row['label']) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'subscale': row.get('subscale', ''),
+        'scenario': row['scenario'][:200],
+        'label': row['label'],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': 'gpt-5.2',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gpt_moralchoice_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
+    """Build result dict for MoralChoice item (GPT version)."""
+    extraction = extract_moralchoice_with_confidence(response_data['content'])
+
+    return {
+        'item_id': row['item_id'],
+        'context': row['context'][:200],
+        'option_a': row['option_a'][:100],
+        'option_b': row['option_b'][:100],
+        'ambiguity': row.get('ambiguity', None),
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': 'gpt-5.2',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extraction['answer'],
+        'confidence': extraction['confidence'],
+        'confidence_category': extraction['confidence_category'],
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gpt_morables_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
+    """Build result dict for MORABLES item (GPT version)."""
+    extracted = extract_morables_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+
+    letter_to_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+    extracted_idx = letter_to_idx.get(extracted)
+    correct = extracted_idx == row['correct_idx'] if extracted_idx is not None else None
+
+    return {
+        'item_id': row['item_id'],
+        'fable': row['fable'][:200],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B', 'C', 'D', 'E'][row['correct_idx']],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': 'gpt-5.2',
         'run': run,
         'response': response_data['full_response'],
         'thinking_content': response_data['thinking'],
@@ -1108,11 +1331,258 @@ async def run_gemini_morables_experiment_async(results_queue: asyncio.Queue, sam
     )
 
 
+# =============================================================================
+# GPT EXPERIMENT RUNNERS
+# =============================================================================
+
+def _run_gpt_experiment_sync(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True
+) -> pd.DataFrame:
+    """
+    Generic sync GPT experiment runner.
+
+    Varies both prompt_level and thinking_level parameters.
+    """
+    results = []
+    total_conditions = len(config.GPT_PROMPT_LEVELS) * len(config.GPT_THINKING_LEVELS) * config.GPT_N_RUNS
+    condition_num = 0
+
+    for run in range(config.GPT_N_RUNS):
+        for prompt_level in config.GPT_PROMPT_LEVELS:
+            for thinking_level in config.GPT_THINKING_LEVELS:
+                condition_num += 1
+
+                print(f"\n[{condition_num}/{total_conditions}] "
+                      f"GPT {benchmark_name} Run {run+1}, L{prompt_level}, thinking={thinking_level}")
+
+                for _, row in tqdm(data.iterrows(), total=len(data),
+                                   desc=f"R{run+1}-L{prompt_level}-{thinking_level}"):
+                    try:
+                        response_data = item_runner(row, prompt_level, thinking_level, include_confidence)
+                        results.append(result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence))
+                    except Exception as e:
+                        print(f"Error on item {row['item_id']}: {e}")
+                        results.append({
+                            'item_id': row['item_id'],
+                            'prompt_level': prompt_level,
+                            'thinking_level': thinking_level,
+                            'model': 'gpt-5.2',
+                            'run': run,
+                            'error': str(e),
+                            'timestamp': datetime.now().isoformat(),
+                        })
+
+                # Checkpoint after each condition
+                pd.DataFrame(results).to_csv(checkpoint_path, index=False)
+
+    return pd.DataFrame(results)
+
+
+async def _run_gpt_experiment_async(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    results_queue: asyncio.Queue,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True,
+    resume: bool = False
+) -> List[Dict[str, Any]]:
+    """
+    Generic async GPT experiment runner with resume support.
+
+    Varies both prompt_level and thinking_level parameters.
+    """
+    completed = set()
+    results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"GPT {benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
+
+    total_items = config.GPT_N_RUNS * len(config.GPT_PROMPT_LEVELS) * len(config.GPT_THINKING_LEVELS) * len(data)
+    remaining = total_items - len(completed)
+    print(f"GPT {benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
+
+    benchmark_key = f"gpt_{benchmark_name.lower()}"
+
+    with tqdm(total=total_items, initial=len(completed), desc=f"GPT {benchmark_name.upper()}", unit="item", leave=True) as pbar:
+        for run in range(config.GPT_N_RUNS):
+            for prompt_level in config.GPT_PROMPT_LEVELS:
+                for thinking_level in config.GPT_THINKING_LEVELS:
+                    pbar.set_postfix(level=prompt_level, thinking=thinking_level, run=run+1)
+
+                    for idx, row in data.iterrows():
+                        key = (row['item_id'], thinking_level, prompt_level, run)
+                        if key in completed:
+                            continue
+
+                        try:
+                            response_data = await item_runner(row, prompt_level, thinking_level, include_confidence)
+                            result = result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence)
+                            result['benchmark'] = benchmark_key
+                            results.append(result)
+                            await results_queue.put((benchmark_key, result))
+                        except Exception as e:
+                            print(f"\nGPT {benchmark_name.upper()} error on {row['item_id']}: {e}")
+                            error_result = {
+                                'item_id': row['item_id'],
+                                'prompt_level': prompt_level,
+                                'thinking_level': thinking_level,
+                                'model': 'gpt-5.2',
+                                'run': run,
+                                'error': str(e),
+                                'benchmark': benchmark_key,
+                                'timestamp': datetime.now().isoformat(),
+                            }
+                            results.append(error_result)
+                        pbar.update(1)
+
+    print(f"GPT {benchmark_name.upper()}: Complete with {len(results)} results")
+    return results
+
+
+# GPT experiment entry points (sync)
+
+def run_gpt_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run full ETHICS experiment with GPT (sync)."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return None
+
+    return _run_gpt_experiment_sync(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/gpt_ethics_checkpoint.csv",
+        item_runner=run_single_item_ethics_gpt,
+        result_builder=build_gpt_ethics_result,
+        include_confidence=include_confidence
+    )
+
+
+def run_gpt_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run full MoralChoice experiment with GPT (sync)."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return None
+
+    return _run_gpt_experiment_sync(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/gpt_moralchoice_checkpoint.csv",
+        item_runner=run_single_item_moralchoice_gpt,
+        result_builder=build_gpt_moralchoice_result,
+        include_confidence=include_confidence
+    )
+
+
+def run_gpt_morables_experiment(sample_size=None, include_confidence=True):
+    """Run full MORABLES experiment with GPT (sync)."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return None
+
+    return _run_gpt_experiment_sync(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/gpt_morables_checkpoint.csv",
+        item_runner=run_single_item_morables_gpt,
+        result_builder=build_gpt_morables_result,
+        include_confidence=include_confidence
+    )
+
+
+# GPT experiment entry points (async)
+
+async def run_gpt_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with GPT asynchronously."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return []
+
+    return await _run_gpt_experiment_async(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/gpt_ethics_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_ethics_gpt_async,
+        result_builder=build_gpt_ethics_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+async def run_gpt_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with GPT asynchronously."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return []
+
+    return await _run_gpt_experiment_async(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/gpt_moralchoice_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_moralchoice_gpt_async,
+        result_builder=build_gpt_moralchoice_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+async def run_gpt_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with GPT asynchronously."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return []
+
+    return await _run_gpt_experiment_async(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/gpt_morables_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_morables_gpt_async,
+        result_builder=build_gpt_morables_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
 async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50, resume: bool = False):
     """Background task to write checkpoints as results come in."""
     # Load existing results if resuming
     all_results = {'ethics': [], 'moralchoice': [], 'morables': [],
-                   'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': []}
+                   'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': [],
+                   'gpt_ethics': [], 'gpt_moralchoice': [], 'gpt_morables': []}
     if resume:
         for bm in all_results.keys():
             all_results[bm] = load_existing_results(f"results/raw/{bm}_checkpoint.csv")
@@ -1159,6 +1629,11 @@ def run_sync(args):
         print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
         print(f"Runs: {config.GEMINI_N_RUNS}")
+    elif args.gpt:
+        print(f"Model: GPT 5.2")
+        print(f"Prompt levels: {config.GPT_PROMPT_LEVELS}")
+        print(f"Thinking levels: {config.GPT_THINKING_LEVELS}")
+        print(f"Runs: {config.GPT_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -1202,6 +1677,40 @@ def run_sync(args):
                 valid_results = morables_results[morables_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+    elif args.gpt:
+        # Run GPT experiments
+        if args.ethics:
+            print("\n" + "=" * 60)
+            print("RUNNING GPT ETHICS EXPERIMENT")
+            print("=" * 60)
+            ethics_results = run_gpt_ethics_experiment(args.sample_size, args.confidence)
+            if ethics_results is not None:
+                ethics_results.to_csv("results/processed/gpt_ethics_results.csv", index=False)
+                print(f"\nGPT ETHICS complete: {len(ethics_results)} observations")
+
+        if args.moralchoice:
+            print("\n" + "=" * 60)
+            print("RUNNING GPT MORALCHOICE EXPERIMENT")
+            print("=" * 60)
+            mc_results = run_gpt_moralchoice_experiment(args.sample_size, args.confidence)
+            if mc_results is not None:
+                mc_results.to_csv("results/processed/gpt_moralchoice_results.csv", index=False)
+                print(f"\nGPT MoralChoice complete: {len(mc_results)} observations")
+
+        if args.morables:
+            print("\n" + "=" * 60)
+            print("RUNNING GPT MORABLES EXPERIMENT")
+            print("=" * 60)
+            morables_results = run_gpt_morables_experiment(args.sample_size, args.confidence)
+            if morables_results is not None:
+                morables_results.to_csv("results/processed/gpt_morables_results.csv", index=False)
+                print(f"\nGPT MORABLES complete: {len(morables_results)} observations")
+
+                valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
     else:
         # Run Claude experiments
         if args.ethics:
@@ -1255,6 +1764,11 @@ async def run_async(args):
         print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
         print(f"Runs: {config.GEMINI_N_RUNS}")
+    elif args.gpt:
+        print(f"Model: GPT 5.2")
+        print(f"Prompt levels: {config.GPT_PROMPT_LEVELS}")
+        print(f"Thinking levels: {config.GPT_THINKING_LEVELS}")
+        print(f"Runs: {config.GPT_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -1271,7 +1785,7 @@ async def run_async(args):
 
     # Reset rate limiter (unless resuming, to preserve stats)
     if not args.resume:
-        if args.gemini:
+        if args.gemini or args.gpt:
             reset_gemini_rate_limiter()
         else:
             reset_rate_limiter()
@@ -1296,6 +1810,17 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_gemini_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('gemini_morables')
+    elif args.gpt:
+        # GPT experiments
+        if args.ethics:
+            tasks.append(run_gpt_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gpt_ethics')
+        if args.moralchoice:
+            tasks.append(run_gpt_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gpt_moralchoice')
+        if args.morables:
+            tasks.append(run_gpt_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gpt_morables')
     else:
         # Claude experiments
         if args.ethics:
@@ -1308,7 +1833,12 @@ async def run_async(args):
             tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('morables')
 
-    model_name = "Gemini 3 Flash" if args.gemini else "Claude"
+    if args.gemini:
+        model_name = "Gemini 3 Flash"
+    elif args.gpt:
+        model_name = "GPT 5.2"
+    else:
+        model_name = "Claude"
     print(f"Running {len(tasks)} {model_name} benchmark(s) in parallel...")
     print()
 
@@ -1323,8 +1853,15 @@ async def run_async(args):
         pass
 
     # Process results
-    prefix = "gemini_" if args.gemini else ""
-    model_label = "Gemini " if args.gemini else ""
+    if args.gemini:
+        prefix = "gemini_"
+        model_label = "Gemini "
+    elif args.gpt:
+        prefix = "gpt_"
+        model_label = "GPT "
+    else:
+        prefix = ""
+        model_label = ""
 
     for i, task_name in enumerate(task_names):
         if isinstance(results[i], Exception):
@@ -1332,7 +1869,9 @@ async def run_async(args):
         else:
             task_results = results[i]
             if task_results:
-                output_file = f"results/processed/{prefix}{task_name.replace('gemini_', '')}_results.csv"
+                # Strip model prefix from task_name for output filename
+                bm_name = task_name.replace('gemini_', '').replace('gpt_', '')
+                output_file = f"results/processed/{prefix}{bm_name}_results.csv"
                 pd.DataFrame(task_results).to_csv(output_file, index=False)
                 print(f"{model_label}{task_name.upper()}: Saved {len(task_results)} results")
 
@@ -1345,13 +1884,21 @@ async def run_async(args):
 
     end_time = datetime.now()
     duration = end_time - start_time
-    stats = get_gemini_rate_stats() if args.gemini else get_rate_stats()
+    if args.gemini or args.gpt:
+        stats = get_gemini_rate_stats()
+    else:
+        stats = get_rate_stats()
 
     print()
     print("=" * 60)
     print("EXPERIMENT COMPLETE")
     print("=" * 60)
-    print(f"Model: {'Gemini 3 Flash' if args.gemini else config.MODEL}")
+    if args.gpt:
+        print(f"Model: GPT 5.2")
+    elif args.gemini:
+        print(f"Model: Gemini 3 Flash")
+    else:
+        print(f"Model: {config.MODEL}")
     print(f"Duration: {duration}")
     print(f"Total API calls: {stats['calls']}")
     print(f"Effective rate: {stats['rate']} calls/min")
@@ -1367,17 +1914,17 @@ Examples:
   python run_experiment.py --async            # Run all benchmarks with Claude (async)
   python run_experiment.py --gemini           # Run all benchmarks with Gemini 3 Flash
   python run_experiment.py --gemini --async   # Run Gemini experiments (async)
+  python run_experiment.py --gpt             # Run all benchmarks with GPT 5.2
+  python run_experiment.py --gpt --async     # Run GPT experiments (async)
   python run_experiment.py --ethics           # Run only ETHICS
   python run_experiment.py --async --morables # Run only MORABLES (async)
   python run_experiment.py --sample 50        # Use 50 items per benchmark
   python run_experiment.py --async --resume   # Resume from checkpoints
 
-Gemini Experiments:
-  Uses fixed Chain-of-Thought prompts (level 2) while varying Gemini's
-  thinking_level parameter. This isolates the effect of internal reasoning
-  budget from prompt structure.
-
-  Thinking levels tested: minimal, low, medium, high
+Model Experiments:
+  Gemini: Thinking levels: minimal, low, medium, high
+  GPT:    Reasoning levels: none, low, medium, high, xhigh
+  All models vary both prompt_level and thinking/reasoning level.
         """
     )
 
@@ -1391,8 +1938,11 @@ Gemini Experiments:
                         help='Resume from existing checkpoints (async mode only)')
 
     # Model selection
-    parser.add_argument('--gemini', action='store_true',
-                        help='Use Gemini 3 Flash with CoT prompts, varying thinking_level')
+    model_group = parser.add_mutually_exclusive_group()
+    model_group.add_argument('--gemini', action='store_true',
+                        help='Use Gemini 3 Flash via OpenRouter, varying thinking_level')
+    model_group.add_argument('--gpt', action='store_true',
+                        help='Use GPT 5.2 via OpenRouter, varying reasoning effort')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true', help='Run ETHICS benchmark')
@@ -1407,9 +1957,15 @@ Gemini Experiments:
         args.moralchoice = True
         args.morables = True
 
-    # Check Gemini availability if requested
+    # Check model availability if requested
     if args.gemini and not is_gemini_available():
         print("ERROR: Gemini via OpenRouter not available.")
+        print("  1. Ensure openai package is installed (already in requirements.txt)")
+        print("  2. Set OPENROUTER_API_KEY in your .env file")
+        return
+
+    if args.gpt and not is_gpt_available():
+        print("ERROR: GPT via OpenRouter not available.")
         print("  1. Ensure openai package is installed (already in requirements.txt)")
         print("  2. Set OPENROUTER_API_KEY in your .env file")
         return
