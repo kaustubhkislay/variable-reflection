@@ -34,5 +34,10 @@ PROCESSED_DIR = "results/processed"
 N_RUNS = 3
 RANDOM_SEED = 67
 
+# Judge Configuration (LLM-as-Judge for flip-flop detection)
+JUDGE_THINKING_LEVEL = "minimal"  # Fast structured output
+JUDGE_MAX_TOKENS = 500  # Structured response is compact
+JUDGE_MIN_TRACE_WORDS = 20  # Minimum words to consider judgeable
+
 # Rate Limiting
 CALLS_PER_MINUTE = 50  # Adjust based on your API tier

@@ -126,17 +126,17 @@ def _build_messages_and_params(prompt: str, thinking_level: str, max_tokens: int
     messages = [{"role": "user", "content": prompt}]
 
     # OpenRouter passes provider-specific params via extra_body
-    # Gemini thinking_level is passed as a provider parameter
+    # reasoning.effort maps to Gemini's thinkingLevel parameter
     extra_body = {
         "provider": {
             "order": ["Google"],  # Prefer Google's Gemini
             "allow_fallbacks": False
+        },
+        "reasoning": {
+            "effort": validate_thinking_level(thinking_level),
+            "exclude": False  # Return thinking traces in response
         }
     }
-
-    # Note: OpenRouter may not support thinking_level directly yet
-    # We include it in case they add support, but the main differentiation
-    # comes from the prompt structure at different reflection levels
 
     return messages, extra_body
 
@@ -146,11 +146,13 @@ def _parse_openrouter_response(response: Any) -> GeminiResponse:
     content = ""
     thinking = None
 
-    # Extract content from response
+    # Extract content and reasoning trace from response
     if response.choices and len(response.choices) > 0:
         message = response.choices[0].message
         if message.content:
             content = message.content
+        # OpenRouter returns thinking traces in message.reasoning
+        thinking = getattr(message, 'reasoning', None)
 
     # Get token counts
     input_tokens = 0
