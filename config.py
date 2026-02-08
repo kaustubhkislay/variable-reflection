@@ -18,9 +18,9 @@ MAX_TOKENS_LEVEL_0 = 30  # Reduced token limit for Level 0 (direct response)
 TEMPERATURE = 0  # Deterministic for reproducibility
 
 # Gemini Experiment Parameters
-# Gemini experiments use a fixed CoT prompt (level 2) while varying thinking_level
+# Gemini experiments vary both prompt level and thinking_level
 GEMINI_THINKING_LEVELS = ["minimal", "low", "medium", "high"]
-GEMINI_PROMPT_LEVEL = 0  # Direct intuition prompts for Gemini
+GEMINI_PROMPT_LEVELS = [0, 2, 4, 5]  # All prompting styles
 GEMINI_MAX_TOKENS = 4000
 GEMINI_N_RUNS = 1  # Number of runs for Gemini experiments
 

@@ -235,85 +235,104 @@ def _build_gemini_response_data(response1, response2=None):
         }
 
 
-async def _run_single_item_gemini_async(prompt_fn, thinking_level, include_confidence, **prompt_kwargs):
+async def _run_single_item_gemini_async(prompt_fn, prompt_level, thinking_level, include_confidence, **prompt_kwargs):
     """
     Generic async single-item runner for Gemini.
 
-    Uses a fixed CoT prompt (level 2) while varying Gemini's thinking_level parameter.
-    This isolates the effect of Gemini's internal reasoning budget from prompt structure.
+    Varies both prompt_level and thinking_level parameters.
     """
-    # Always use level 2 (Chain-of-thought) prompts for Gemini experiments
-    prompt = prompt_fn(config.GEMINI_PROMPT_LEVEL, **prompt_kwargs, include_confidence=include_confidence)
-    response = await call_gemini_with_rate_limit_async(prompt, thinking_level)
+    if prompt_level == 5:
+        # Two-pass reflection
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = await call_gemini_with_rate_limit_async(prompt1, thinking_level)
 
-    return _build_gemini_response_data(response)
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = await call_gemini_with_rate_limit_async(prompt2, thinking_level)
+
+        return _build_gemini_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = await call_gemini_with_rate_limit_async(prompt, thinking_level)
+
+        return _build_gemini_response_data(response)
 
 
-def _run_single_item_gemini_sync(prompt_fn, thinking_level, include_confidence, **prompt_kwargs):
+def _run_single_item_gemini_sync(prompt_fn, prompt_level, thinking_level, include_confidence, **prompt_kwargs):
     """
     Generic sync single-item runner for Gemini.
 
-    Uses a fixed CoT prompt (level 2) while varying Gemini's thinking_level parameter.
+    Varies both prompt_level and thinking_level parameters.
     """
-    # Always use level 2 (Chain-of-thought) prompts for Gemini experiments
-    prompt = prompt_fn(config.GEMINI_PROMPT_LEVEL, **prompt_kwargs, include_confidence=include_confidence)
-    response = call_gemini_with_rate_limit(prompt, thinking_level)
+    if prompt_level == 5:
+        # Two-pass reflection
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = call_gemini_with_rate_limit(prompt1, thinking_level)
 
-    return _build_gemini_response_data(response)
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = call_gemini_with_rate_limit(prompt2, thinking_level)
+
+        return _build_gemini_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = call_gemini_with_rate_limit(prompt, thinking_level)
+
+        return _build_gemini_response_data(response)
 
 
 # Gemini benchmark-specific runners (async)
 
-async def run_single_item_ethics_gemini_async(row, thinking_level, include_confidence=True):
+async def run_single_item_ethics_gemini_async(row, prompt_level, thinking_level, include_confidence=True):
     """Run single ETHICS item with Gemini (async)."""
     return await _run_single_item_gemini_async(
-        get_ethics_prompt, thinking_level, include_confidence,
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
         scenario=row['scenario']
     )
 
 
-async def run_single_item_moralchoice_gemini_async(row, thinking_level, include_confidence=True):
+async def run_single_item_moralchoice_gemini_async(row, prompt_level, thinking_level, include_confidence=True):
     """Run single MoralChoice item with Gemini (async)."""
     return await _run_single_item_gemini_async(
-        get_moralchoice_prompt, thinking_level, include_confidence,
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
         context=row['context'], option_a=row['option_a'], option_b=row['option_b']
     )
 
 
-async def run_single_item_morables_gemini_async(row, thinking_level, include_confidence=True):
+async def run_single_item_morables_gemini_async(row, prompt_level, thinking_level, include_confidence=True):
     """Run single MORABLES item with Gemini (async)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
     return await _run_single_item_gemini_async(
-        get_morables_prompt, thinking_level, include_confidence,
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
         fable=row['fable'], options=options
     )
 
 
 # Gemini benchmark-specific runners (sync)
 
-def run_single_item_ethics_gemini(row, thinking_level, include_confidence=True):
+def run_single_item_ethics_gemini(row, prompt_level, thinking_level, include_confidence=True):
     """Run single ETHICS item with Gemini (sync)."""
     return _run_single_item_gemini_sync(
-        get_ethics_prompt, thinking_level, include_confidence,
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
         scenario=row['scenario']
     )
 
 
-def run_single_item_moralchoice_gemini(row, thinking_level, include_confidence=True):
+def run_single_item_moralchoice_gemini(row, prompt_level, thinking_level, include_confidence=True):
     """Run single MoralChoice item with Gemini (sync)."""
     return _run_single_item_gemini_sync(
-        get_moralchoice_prompt, thinking_level, include_confidence,
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
         context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
     )
 
 
-def run_single_item_morables_gemini(row, thinking_level, include_confidence=True):
+def run_single_item_morables_gemini(row, prompt_level, thinking_level, include_confidence=True):
     """Run single MORABLES item with Gemini (sync)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
     return _run_single_item_gemini_sync(
-        get_morables_prompt, thinking_level, include_confidence,
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
         fable=row['fable'], options=options
     )
 
@@ -753,8 +772,8 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
 # GEMINI EXPERIMENT RUNNERS
 # =============================================================================
 
-def build_gemini_ethics_result(row, thinking_level, run, response_data, include_confidence):
-    """Build result dict for ETHICS item (Gemini version - uses thinking_level directly)."""
+def build_gemini_ethics_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
+    """Build result dict for ETHICS item (Gemini version)."""
     extracted = extract_ethics_answer(response_data['content'])
     confidence = extract_confidence_score(response_data['content']) if include_confidence else None
     correct = (extracted == row['label']) if extracted else None
@@ -764,7 +783,7 @@ def build_gemini_ethics_result(row, thinking_level, run, response_data, include_
         'subscale': row.get('subscale', ''),
         'scenario': row['scenario'][:200],
         'label': row['label'],
-        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'prompt_level': prompt_level,
         'thinking_level': thinking_level,
         'model': 'gemini-3-flash',
         'run': run,
@@ -783,7 +802,7 @@ def build_gemini_ethics_result(row, thinking_level, run, response_data, include_
     }
 
 
-def build_gemini_moralchoice_result(row, thinking_level, run, response_data, include_confidence):
+def build_gemini_moralchoice_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
     """Build result dict for MoralChoice item (Gemini version)."""
     extraction = extract_moralchoice_with_confidence(response_data['content'])
 
@@ -793,7 +812,7 @@ def build_gemini_moralchoice_result(row, thinking_level, run, response_data, inc
         'option_a': row['option_a'][:100],
         'option_b': row['option_b'][:100],
         'ambiguity': row.get('ambiguity', None),
-        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'prompt_level': prompt_level,
         'thinking_level': thinking_level,
         'model': 'gemini-3-flash',
         'run': run,
@@ -811,7 +830,7 @@ def build_gemini_moralchoice_result(row, thinking_level, run, response_data, inc
     }
 
 
-def build_gemini_morables_result(row, thinking_level, run, response_data, include_confidence):
+def build_gemini_morables_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
     """Build result dict for MORABLES item (Gemini version)."""
     extracted = extract_morables_answer(response_data['content'])
     confidence = extract_confidence_score(response_data['content']) if include_confidence else None
@@ -825,7 +844,7 @@ def build_gemini_morables_result(row, thinking_level, run, response_data, includ
         'fable': row['fable'][:200],
         'correct_idx': row['correct_idx'],
         'correct_answer': ['A', 'B', 'C', 'D', 'E'][row['correct_idx']],
-        'prompt_level': config.GEMINI_PROMPT_LEVEL,  # Always CoT (level 2)
+        'prompt_level': prompt_level,
         'thinking_level': thinking_level,
         'model': 'gemini-3-flash',
         'run': run,
@@ -855,39 +874,39 @@ def _run_gemini_experiment_sync(
     """
     Generic sync Gemini experiment runner.
 
-    Uses fixed CoT prompts (level 2) while varying Gemini's thinking_level parameter.
-    This isolates the effect of internal reasoning budget from prompt structure.
+    Varies both prompt_level and thinking_level parameters.
     """
     results = []
-    total_conditions = len(config.GEMINI_THINKING_LEVELS) * config.GEMINI_N_RUNS
+    total_conditions = len(config.GEMINI_PROMPT_LEVELS) * len(config.GEMINI_THINKING_LEVELS) * config.GEMINI_N_RUNS
     condition_num = 0
 
     for run in range(config.GEMINI_N_RUNS):
-        for thinking_level in config.GEMINI_THINKING_LEVELS:
-            condition_num += 1
+        for prompt_level in config.GEMINI_PROMPT_LEVELS:
+            for thinking_level in config.GEMINI_THINKING_LEVELS:
+                condition_num += 1
 
-            print(f"\n[{condition_num}/{total_conditions}] "
-                  f"Gemini {benchmark_name} Run {run+1}, thinking_level={thinking_level}")
+                print(f"\n[{condition_num}/{total_conditions}] "
+                      f"Gemini {benchmark_name} Run {run+1}, L{prompt_level}, thinking={thinking_level}")
 
-            for _, row in tqdm(data.iterrows(), total=len(data),
-                               desc=f"R{run+1}-{thinking_level}"):
-                try:
-                    response_data = item_runner(row, thinking_level, include_confidence)
-                    results.append(result_builder(row, thinking_level, run, response_data, include_confidence))
-                except Exception as e:
-                    print(f"Error on item {row['item_id']}: {e}")
-                    results.append({
-                        'item_id': row['item_id'],
-                        'prompt_level': config.GEMINI_PROMPT_LEVEL,
-                        'thinking_level': thinking_level,
-                        'model': 'gemini-3-flash',
-                        'run': run,
-                        'error': str(e),
-                        'timestamp': datetime.now().isoformat(),
-                    })
+                for _, row in tqdm(data.iterrows(), total=len(data),
+                                   desc=f"R{run+1}-L{prompt_level}-{thinking_level}"):
+                    try:
+                        response_data = item_runner(row, prompt_level, thinking_level, include_confidence)
+                        results.append(result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence))
+                    except Exception as e:
+                        print(f"Error on item {row['item_id']}: {e}")
+                        results.append({
+                            'item_id': row['item_id'],
+                            'prompt_level': prompt_level,
+                            'thinking_level': thinking_level,
+                            'model': 'gemini-3-flash',
+                            'run': run,
+                            'error': str(e),
+                            'timestamp': datetime.now().isoformat(),
+                        })
 
-            # Checkpoint after each condition
-            pd.DataFrame(results).to_csv(checkpoint_path, index=False)
+                # Checkpoint after each condition
+                pd.DataFrame(results).to_csv(checkpoint_path, index=False)
 
     return pd.DataFrame(results)
 
@@ -905,7 +924,7 @@ async def _run_gemini_experiment_async(
     """
     Generic async Gemini experiment runner with resume support.
 
-    Uses fixed CoT prompts (level 2) while varying Gemini's thinking_level parameter.
+    Varies both prompt_level and thinking_level parameters.
     """
     # Load existing progress if resuming
     completed = set()
@@ -915,8 +934,8 @@ async def _run_gemini_experiment_async(
         results = load_existing_results(checkpoint_path)
         print(f"Gemini {benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
 
-    # Gemini: iterate over thinking_levels, not prompt levels
-    total_items = config.GEMINI_N_RUNS * len(config.GEMINI_THINKING_LEVELS) * len(data)
+    # Gemini: iterate over prompt_levels × thinking_levels
+    total_items = config.GEMINI_N_RUNS * len(config.GEMINI_PROMPT_LEVELS) * len(config.GEMINI_THINKING_LEVELS) * len(data)
     remaining = total_items - len(completed)
     print(f"Gemini {benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
 
@@ -924,30 +943,31 @@ async def _run_gemini_experiment_async(
 
     with tqdm(total=total_items, initial=len(completed), desc=f"Gemini {benchmark_name.upper()}", unit="item", leave=True) as pbar:
         for run in range(config.GEMINI_N_RUNS):
-            for thinking_level in config.GEMINI_THINKING_LEVELS:
-                pbar.set_postfix(thinking=thinking_level, run=run+1)
+            for prompt_level in config.GEMINI_PROMPT_LEVELS:
+                for thinking_level in config.GEMINI_THINKING_LEVELS:
+                    pbar.set_postfix(level=prompt_level, thinking=thinking_level, run=run+1)
 
-                for idx, row in data.iterrows():
-                    # Skip if already completed (use thinking_level as key instead of level)
-                    key = (row['item_id'], thinking_level, None, run)
-                    if key in completed:
-                        continue
+                    for idx, row in data.iterrows():
+                        # Skip if already completed
+                        key = (row['item_id'], thinking_level, prompt_level, run)
+                        if key in completed:
+                            continue
 
-                    try:
-                        response_data = await item_runner(row, thinking_level, include_confidence)
-                        result = result_builder(row, thinking_level, run, response_data, include_confidence)
-                        result['benchmark'] = benchmark_key
-                        results.append(result)
-                        await results_queue.put((benchmark_key, result))
-                    except Exception as e:
-                        print(f"\nGemini {benchmark_name.upper()} error on {row['item_id']}: {e}")
-                        error_result = {
-                            'item_id': row['item_id'],
-                            'prompt_level': config.GEMINI_PROMPT_LEVEL,
-                            'thinking_level': thinking_level,
-                            'model': 'gemini-3-flash',
-                            'run': run,
-                            'error': str(e),
+                        try:
+                            response_data = await item_runner(row, prompt_level, thinking_level, include_confidence)
+                            result = result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence)
+                            result['benchmark'] = benchmark_key
+                            results.append(result)
+                            await results_queue.put((benchmark_key, result))
+                        except Exception as e:
+                            print(f"\nGemini {benchmark_name.upper()} error on {row['item_id']}: {e}")
+                            error_result = {
+                                'item_id': row['item_id'],
+                                'prompt_level': prompt_level,
+                                'thinking_level': thinking_level,
+                                'model': 'gemini-3-flash',
+                                'run': run,
+                                'error': str(e),
                             'benchmark': benchmark_key,
                             'timestamp': datetime.now().isoformat(),
                         }
@@ -1136,7 +1156,7 @@ def run_sync(args):
     print(f"Start time: {start_time}")
     if args.gemini:
         print(f"Model: Gemini 3 Flash")
-        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (Direct intuition)")
+        print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
         print(f"Runs: {config.GEMINI_N_RUNS}")
     else:
@@ -1232,7 +1252,7 @@ async def run_async(args):
     print(f"Start time: {start_time}")
     if args.gemini:
         print(f"Model: Gemini 3 Flash")
-        print(f"Prompt level: {config.GEMINI_PROMPT_LEVEL} (Direct intuition)")
+        print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
         print(f"Runs: {config.GEMINI_N_RUNS}")
     else:
