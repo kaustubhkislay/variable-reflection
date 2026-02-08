@@ -94,7 +94,7 @@ def _build_response_data(response1, response2=None):
         }
 
 
-async def _run_single_item_async(prompt_fn, level, thinking, include_confidence, **prompt_kwargs):
+async def _run_single_item_async(prompt_fn, level, thinking, include_confidence, model=None, **prompt_kwargs):
     """
     Generic async single-item runner.
 
@@ -103,6 +103,7 @@ async def _run_single_item_async(prompt_fn, level, thinking, include_confidence,
         level: Reflection level (0-5)
         thinking: Whether extended thinking is enabled
         include_confidence: Whether to include confidence in prompt
+        model: Anthropic model ID (default: config.MODEL)
         **prompt_kwargs: Additional kwargs passed to prompt_fn (scenario, context, options, etc.)
 
     Returns:
@@ -113,21 +114,21 @@ async def _run_single_item_async(prompt_fn, level, thinking, include_confidence,
     if level == 5:
         # Two-pass reflection
         prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
-        response1 = await call_with_rate_limit_async(prompt1, thinking)
+        response1 = await call_with_rate_limit_async(prompt1, thinking, model=model)
 
         prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
                            include_confidence=include_confidence)
-        response2 = await call_with_rate_limit_async(prompt2, thinking)
+        response2 = await call_with_rate_limit_async(prompt2, thinking, model=model)
 
         return _build_response_data(response1, response2)
     else:
         prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
-        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens)
+        response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens, model=model)
 
         return _build_response_data(response)
 
 
-def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, **prompt_kwargs):
+def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, model=None, **prompt_kwargs):
     """
     Generic sync single-item runner.
 
@@ -136,6 +137,7 @@ def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, **prom
         level: Reflection level (0-5)
         thinking: Whether extended thinking is enabled
         include_confidence: Whether to include confidence in prompt
+        model: Anthropic model ID (default: config.MODEL)
         **prompt_kwargs: Additional kwargs passed to prompt_fn
 
     Returns:
@@ -146,73 +148,73 @@ def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, **prom
     if level == 5:
         # Two-pass reflection
         prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
-        response1 = call_with_rate_limit(prompt1, thinking)
+        response1 = call_with_rate_limit(prompt1, thinking, model=model)
 
         prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
                            include_confidence=include_confidence)
-        response2 = call_with_rate_limit(prompt2, thinking)
+        response2 = call_with_rate_limit(prompt2, thinking, model=model)
 
         return _build_response_data(response1, response2)
     else:
         prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
-        response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens)
+        response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens, model=model)
 
         return _build_response_data(response)
 
 
 # Benchmark-specific runners (async) - thin wrappers around generic runner
 
-async def run_single_item_ethics_async(row, level, thinking, include_confidence=True):
+async def run_single_item_ethics_async(row, level, thinking, include_confidence=True, model=None):
     """Run single ETHICS item at given condition (async)."""
     return await _run_single_item_async(
         get_ethics_prompt, level, thinking, include_confidence,
-        scenario=row['scenario']
+        model=model, scenario=row['scenario']
     )
 
 
-async def run_single_item_moralchoice_async(row, level, thinking, include_confidence=True):
+async def run_single_item_moralchoice_async(row, level, thinking, include_confidence=True, model=None):
     """Run single MoralChoice item at given condition (async)."""
     return await _run_single_item_async(
         get_moralchoice_prompt, level, thinking, include_confidence,
-        context=row['context'], option_a=row['option_a'], option_b=row['option_b']
+        model=model, context=row['context'], option_a=row['option_a'], option_b=row['option_b']
     )
 
 
-async def run_single_item_morables_async(row, level, thinking, include_confidence=True):
+async def run_single_item_morables_async(row, level, thinking, include_confidence=True, model=None):
     """Run single MORABLES item at given condition (async)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
     return await _run_single_item_async(
         get_morables_prompt, level, thinking, include_confidence,
-        fable=row['fable'], options=options
+        model=model, fable=row['fable'], options=options
     )
 
 
 # Benchmark-specific runners (sync) - thin wrappers for backwards compatibility
 
-def run_single_item_ethics(row, level, thinking, include_confidence=True):
+def run_single_item_ethics(row, level, thinking, include_confidence=True, model=None):
     """Run single ETHICS item at given condition (sync)."""
     return _run_single_item_sync(
         get_ethics_prompt, level, thinking, include_confidence,
-        scenario=row['scenario']
+        model=model, scenario=row['scenario']
     )
 
 
-def run_single_item_moralchoice(row, level, thinking, include_confidence=True):
+def run_single_item_moralchoice(row, level, thinking, include_confidence=True, model=None):
     """Run single MoralChoice item at given condition (sync)."""
     return _run_single_item_sync(
         get_moralchoice_prompt, level, thinking, include_confidence,
-        context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
+        model=model, context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
     )
 
 
-def run_single_item_morables(row, level, thinking, include_confidence=True):
+def run_single_item_morables(row, level, thinking, include_confidence=True, model=None):
     """Run single MORABLES item at given condition (sync)."""
     options = [row['option_a'], row['option_b'], row['option_c'],
                row['option_d'], row['option_e']]
     return _run_single_item_sync(
         get_morables_prompt, level, thinking, include_confidence,
-        fable=row['fable'], options=options
+        model=model, fable=row['fable'], options=options
     )
 
 
@@ -472,13 +474,13 @@ def run_single_item_morables_gpt(row, prompt_level, thinking_level, include_conf
 # RESULT BUILDERS
 # =============================================================================
 
-def build_ethics_result(row, level, thinking, run, response_data, include_confidence):
+def build_ethics_result(row, level, thinking, run, response_data, include_confidence, model_label=None):
     """Build result dict for ETHICS item."""
     extracted = extract_ethics_answer(response_data['content'])
     confidence = extract_confidence_score(response_data['content']) if include_confidence else None
     correct = (extracted == row['label']) if extracted else None
 
-    return {
+    result = {
         'item_id': row['item_id'],
         'subscale': row.get('subscale', ''),
         'scenario': row['scenario'][:200],
@@ -499,13 +501,16 @@ def build_ethics_result(row, level, thinking, run, response_data, include_confid
         'output_tokens': response_data['output_tokens'],
         'timestamp': datetime.now().isoformat(),
     }
+    if model_label is not None:
+        result['model'] = model_label
+    return result
 
 
-def build_moralchoice_result(row, level, thinking, run, response_data, include_confidence):
+def build_moralchoice_result(row, level, thinking, run, response_data, include_confidence, model_label=None):
     """Build result dict for MoralChoice item."""
     extraction = extract_moralchoice_with_confidence(response_data['content'])
 
-    return {
+    result = {
         'item_id': row['item_id'],
         'context': row['context'][:200],
         'option_a': row['option_a'][:100],
@@ -526,9 +531,12 @@ def build_moralchoice_result(row, level, thinking, run, response_data, include_c
         'output_tokens': response_data['output_tokens'],
         'timestamp': datetime.now().isoformat(),
     }
+    if model_label is not None:
+        result['model'] = model_label
+    return result
 
 
-def build_morables_result(row, level, thinking, run, response_data, include_confidence):
+def build_morables_result(row, level, thinking, run, response_data, include_confidence, model_label=None):
     """Build result dict for MORABLES item."""
     extracted = extract_morables_answer(response_data['content'])
     confidence = extract_confidence_score(response_data['content']) if include_confidence else None
@@ -537,7 +545,7 @@ def build_morables_result(row, level, thinking, run, response_data, include_conf
     extracted_idx = letter_to_idx.get(extracted)
     correct = extracted_idx == row['correct_idx'] if extracted_idx is not None else None
 
-    return {
+    result = {
         'item_id': row['item_id'],
         'fable': row['fable'][:200],
         'correct_idx': row['correct_idx'],
@@ -558,6 +566,9 @@ def build_morables_result(row, level, thinking, run, response_data, include_conf
         'output_tokens': response_data['output_tokens'],
         'timestamp': datetime.now().isoformat(),
     }
+    if model_label is not None:
+        result['model'] = model_label
+    return result
 
 
 # GPT result builders
@@ -748,7 +759,8 @@ def _run_experiment_sync(
     item_runner,
     result_builder,
     error_extra_fields_fn,
-    include_confidence: bool = True
+    include_confidence: bool = True,
+    model_label: str = None
 ) -> pd.DataFrame:
     """
     Generic sync experiment runner.
@@ -761,6 +773,7 @@ def _run_experiment_sync(
         result_builder: Function(row, level, thinking, run, response_data, include_confidence) -> result dict
         error_extra_fields_fn: Function(row) -> dict of extra fields for error results
         include_confidence: Whether to include confidence scoring
+        model_label: Model label for logging (default: None uses benchmark_name only)
     """
     results = []
     total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
@@ -772,8 +785,9 @@ def _run_experiment_sync(
                 condition_num += 1
                 thinking_label = "ON" if thinking else "OFF"
 
+                log_prefix = f"{model_label} " if model_label else ""
                 print(f"\n[{condition_num}/{total_conditions}] "
-                      f"{benchmark_name} Run {run+1}, Level {level}, Thinking {thinking_label}")
+                      f"{log_prefix}{benchmark_name} Run {run+1}, Level {level}, Thinking {thinking_label}")
 
                 for _, row in tqdm(data.iterrows(), total=len(data),
                                    desc=f"R{run+1}-L{level}-{thinking_label}"):
@@ -876,7 +890,9 @@ async def _run_experiment_async(
     item_runner,
     result_builder,
     include_confidence: bool = True,
-    resume: bool = False
+    resume: bool = False,
+    model_label: str = None,
+    file_prefix: str = ''
 ) -> List[Dict[str, Any]]:
     """
     Generic async experiment runner with resume support.
@@ -890,25 +906,29 @@ async def _run_experiment_async(
         result_builder: Function(row, level, thinking, run, response_data, include_confidence) -> result dict
         include_confidence: Whether to include confidence scoring
         resume: Whether to resume from checkpoint
+        model_label: Model label for logging (default: None)
+        file_prefix: Prefix for benchmark_key (e.g., 'claude_opus')
 
     Returns:
         List of result dictionaries
     """
+    log_prefix = f"{model_label} " if model_label else ""
+
     # Load existing progress if resuming
     completed = set()
     results = []
     if resume:
         completed = load_completed_from_checkpoint(checkpoint_path)
         results = load_existing_results(checkpoint_path)
-        print(f"{benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
+        print(f"{log_prefix}{benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
 
     total_items = N_RUNS * len(THINKING_CONDITIONS) * len(LEVELS) * len(data)
     remaining = total_items - len(completed)
-    print(f"{benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
+    print(f"{log_prefix}{benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
 
-    benchmark_key = benchmark_name.lower()
+    benchmark_key = f"{file_prefix}_{benchmark_name.lower()}" if file_prefix else benchmark_name.lower()
 
-    with tqdm(total=total_items, initial=len(completed), desc=benchmark_name.upper(), unit="item", leave=True) as pbar:
+    with tqdm(total=total_items, initial=len(completed), desc=f"{log_prefix}{benchmark_name.upper()}", unit="item", leave=True) as pbar:
         for run in range(N_RUNS):
             for thinking in THINKING_CONDITIONS:
                 for level in LEVELS:
@@ -928,13 +948,13 @@ async def _run_experiment_async(
                             results.append(result)
                             await results_queue.put((benchmark_key, result))
                         except Exception as e:
-                            print(f"\n{benchmark_name.upper()} error on {row['item_id']}: {e}")
+                            print(f"\n{log_prefix}{benchmark_name.upper()} error on {row['item_id']}: {e}")
                             error_result = _build_error_result(row, level, thinking, run, e)
                             error_result['benchmark'] = benchmark_key
                             results.append(error_result)
                         pbar.update(1)
 
-    print(f"{benchmark_name.upper()}: Complete with {len(results)} results")
+    print(f"{log_prefix}{benchmark_name.upper()}: Complete with {len(results)} results")
     return results
 
 
@@ -989,6 +1009,128 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
         result_builder=build_morables_result,
         include_confidence=include_confidence,
         resume=resume
+    )
+
+
+# =============================================================================
+# CLAUDE OPUS EXPERIMENT ENTRY POINTS
+# =============================================================================
+
+# Claude Opus sync entry points — reuse Haiku infrastructure with Opus model
+
+def run_claude_opus_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run full ETHICS experiment with Claude Opus (sync)."""
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/claude_opus_ethics_checkpoint.csv",
+        item_runner=partial(run_single_item_ethics, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_ethics_result, model_label='claude-opus-4.5'),
+        error_extra_fields_fn=lambda row: {'subscale': row.get('subscale', '')},
+        include_confidence=include_confidence,
+        model_label='claude-opus-4.5'
+    )
+
+
+def run_claude_opus_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run full MoralChoice experiment with Claude Opus (sync)."""
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/claude_opus_moralchoice_checkpoint.csv",
+        item_runner=partial(run_single_item_moralchoice, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_moralchoice_result, model_label='claude-opus-4.5'),
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence,
+        model_label='claude-opus-4.5'
+    )
+
+
+def run_claude_opus_morables_experiment(sample_size=None, include_confidence=True):
+    """Run full MORABLES experiment with Claude Opus (sync)."""
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/claude_opus_morables_checkpoint.csv",
+        item_runner=partial(run_single_item_morables, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_morables_result, model_label='claude-opus-4.5'),
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence,
+        model_label='claude-opus-4.5'
+    )
+
+
+# Claude Opus async entry points
+
+async def run_claude_opus_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Claude Opus asynchronously."""
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path="results/raw/claude_opus_ethics_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_ethics_async, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_ethics_result, model_label='claude-opus-4.5'),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label='claude-opus-4.5',
+        file_prefix='claude_opus'
+    )
+
+
+async def run_claude_opus_moralchoice_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Claude Opus asynchronously."""
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path="results/raw/claude_opus_moralchoice_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_moralchoice_async, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_moralchoice_result, model_label='claude-opus-4.5'),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label='claude-opus-4.5',
+        file_prefix='claude_opus'
+    )
+
+
+async def run_claude_opus_morables_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Claude Opus asynchronously."""
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path="results/raw/claude_opus_morables_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_morables_async, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_morables_result, model_label='claude-opus-4.5'),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label='claude-opus-4.5',
+        file_prefix='claude_opus'
     )
 
 
@@ -1728,6 +1870,7 @@ async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: i
     """Background task to write checkpoints as results come in."""
     # Load existing results if resuming
     all_results = {'ethics': [], 'moralchoice': [], 'morables': [],
+                   'claude_opus_ethics': [], 'claude_opus_moralchoice': [], 'claude_opus_morables': [],
                    'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': [],
                    'gemini_pro_ethics': [], 'gemini_pro_moralchoice': [], 'gemini_pro_morables': [],
                    'gpt_ethics': [], 'gpt_moralchoice': [], 'gpt_morables': []}
@@ -1772,7 +1915,12 @@ def run_sync(args):
     print("STARTING EXPERIMENT (Sync Mode)")
     print("=" * 60)
     print(f"Start time: {start_time}")
-    if args.gemini:
+    if args.claude_opus:
+        print(f"Model: Claude Opus 4.5")
+        print(f"Thinking conditions: {THINKING_CONDITIONS}")
+        print(f"Levels: {LEVELS}")
+        print(f"Runs: {N_RUNS}")
+    elif args.gemini:
         print(f"Model: Gemini 3 Flash")
         print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
@@ -1798,7 +1946,40 @@ def run_sync(args):
     Path("results/raw").mkdir(parents=True, exist_ok=True)
     Path("results/processed").mkdir(parents=True, exist_ok=True)
 
-    if args.gemini:
+    if args.claude_opus:
+        # Run Claude Opus experiments
+        if args.ethics:
+            print("\n" + "=" * 60)
+            print("RUNNING CLAUDE OPUS ETHICS EXPERIMENT")
+            print("=" * 60)
+            ethics_results = run_claude_opus_ethics_experiment(args.sample_size, args.confidence)
+            if ethics_results is not None:
+                ethics_results.to_csv("results/processed/claude_opus_ethics_results.csv", index=False)
+                print(f"\nClaude Opus ETHICS complete: {len(ethics_results)} observations")
+
+        if args.moralchoice:
+            print("\n" + "=" * 60)
+            print("RUNNING CLAUDE OPUS MORALCHOICE EXPERIMENT")
+            print("=" * 60)
+            mc_results = run_claude_opus_moralchoice_experiment(args.sample_size, args.confidence)
+            if mc_results is not None:
+                mc_results.to_csv("results/processed/claude_opus_moralchoice_results.csv", index=False)
+                print(f"\nClaude Opus MoralChoice complete: {len(mc_results)} observations")
+
+        if args.morables:
+            print("\n" + "=" * 60)
+            print("RUNNING CLAUDE OPUS MORABLES EXPERIMENT")
+            print("=" * 60)
+            morables_results = run_claude_opus_morables_experiment(args.sample_size, args.confidence)
+            if morables_results is not None:
+                morables_results.to_csv("results/processed/claude_opus_morables_results.csv", index=False)
+                print(f"\nClaude Opus MORABLES complete: {len(morables_results)} observations")
+
+                valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+    elif args.gemini:
         # Run Gemini Flash experiments
         if args.ethics:
             print("\n" + "=" * 60)
@@ -1945,7 +2126,12 @@ async def run_async(args):
     print("STARTING EXPERIMENT (Async Mode - Parallel Datasets)")
     print("=" * 60)
     print(f"Start time: {start_time}")
-    if args.gemini:
+    if args.claude_opus:
+        print(f"Model: Claude Opus 4.5")
+        print(f"Thinking conditions: {THINKING_CONDITIONS}")
+        print(f"Levels: {LEVELS}")
+        print(f"Runs: {N_RUNS}")
+    elif args.gemini:
         print(f"Model: Gemini 3 Flash")
         print(f"Prompt levels: {config.GEMINI_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GEMINI_THINKING_LEVELS}")
@@ -1990,7 +2176,18 @@ async def run_async(args):
     # Build list of experiment tasks
     tasks = []
     task_names = []
-    if args.gemini:
+    if args.claude_opus:
+        # Claude Opus experiments
+        if args.ethics:
+            tasks.append(run_claude_opus_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('claude_opus_ethics')
+        if args.moralchoice:
+            tasks.append(run_claude_opus_moralchoice_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('claude_opus_moralchoice')
+        if args.morables:
+            tasks.append(run_claude_opus_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('claude_opus_morables')
+    elif args.gemini:
         # Gemini Flash experiments
         if args.ethics:
             tasks.append(run_gemini_ethics_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
@@ -2035,7 +2232,9 @@ async def run_async(args):
             tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('morables')
 
-    if args.gemini:
+    if args.claude_opus:
+        model_name = "Claude Opus 4.5"
+    elif args.gemini:
         model_name = "Gemini 3 Flash"
     elif args.gemini_pro:
         model_name = "Gemini 3 Pro"
@@ -2057,7 +2256,10 @@ async def run_async(args):
         pass
 
     # Process results
-    if args.gemini:
+    if args.claude_opus:
+        prefix = "claude_opus_"
+        model_label = "Claude Opus "
+    elif args.gemini:
         prefix = "gemini_"
         model_label = "Gemini "
     elif args.gemini_pro:
@@ -2077,7 +2279,7 @@ async def run_async(args):
             task_results = results[i]
             if task_results:
                 # Strip model prefix from task_name for output filename
-                bm_name = task_name.replace('gemini_pro_', '').replace('gemini_', '').replace('gpt_', '')
+                bm_name = task_name.replace('claude_opus_', '').replace('gemini_pro_', '').replace('gemini_', '').replace('gpt_', '')
                 output_file = f"results/processed/{prefix}{bm_name}_results.csv"
                 pd.DataFrame(task_results).to_csv(output_file, index=False)
                 print(f"{model_label}{task_name.upper()}: Saved {len(task_results)} results")
@@ -2100,7 +2302,9 @@ async def run_async(args):
     print("=" * 60)
     print("EXPERIMENT COMPLETE")
     print("=" * 60)
-    if args.gpt:
+    if args.claude_opus:
+        print(f"Model: Claude Opus 4.5")
+    elif args.gpt:
         print(f"Model: GPT 5.2")
     elif args.gemini_pro:
         print(f"Model: Gemini 3 Pro")
@@ -2119,19 +2323,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_experiment.py                        # Run all benchmarks with Claude (sync)
-  python run_experiment.py --async                # Run all benchmarks with Claude (async)
+  python run_experiment.py                        # Run all benchmarks with Claude Haiku (sync)
+  python run_experiment.py --async                # Run all benchmarks with Claude Haiku (async)
+  python run_experiment.py --claude-opus          # Claude Opus 4.5
   python run_experiment.py --gemini               # Gemini 3 Flash
   python run_experiment.py --gemini-pro           # Gemini 3 Pro
   python run_experiment.py --gpt                  # GPT 5.2
-  python run_experiment.py --gemini-pro --async   # Gemini Pro experiments (async)
+  python run_experiment.py --claude-opus --async  # Claude Opus experiments (async)
   python run_experiment.py --ethics               # Run only ETHICS
   python run_experiment.py --sample 50            # Use 50 items per benchmark
   python run_experiment.py --async --resume       # Resume from checkpoints
 
 Model Experiments:
-  Gemini Flash/Pro: Thinking levels: minimal, low, medium, high
-  GPT:              Reasoning levels: none, low, medium, high, xhigh
+  Claude Haiku/Opus: Thinking: on/off (extended thinking)
+  Gemini Flash/Pro:  Thinking levels: minimal, low, medium, high
+  GPT:               Reasoning levels: none, low, medium, high, xhigh
   All models vary both prompt_level and thinking/reasoning level.
         """
     )
@@ -2147,6 +2353,8 @@ Model Experiments:
 
     # Model selection
     model_group = parser.add_mutually_exclusive_group()
+    model_group.add_argument('--claude-opus', dest='claude_opus', action='store_true',
+                        help='Use Claude Opus 4.5 via Anthropic API')
     model_group.add_argument('--gemini', action='store_true',
                         help='Use Gemini 3 Flash via OpenRouter, varying thinking_level')
     model_group.add_argument('--gemini-pro', dest='gemini_pro', action='store_true',
@@ -2168,6 +2376,11 @@ Model Experiments:
         args.morables = True
 
     # Check model availability if requested
+    if args.claude_opus and not config.ANTHROPIC_API_KEY:
+        print("ERROR: Claude Opus requires ANTHROPIC_API_KEY.")
+        print("  Set ANTHROPIC_API_KEY in your .env file")
+        return
+
     if (args.gemini or args.gemini_pro) and not is_gemini_available():
         print("ERROR: Gemini via OpenRouter not available.")
         print("  1. Ensure openai package is installed (already in requirements.txt)")

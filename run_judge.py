@@ -31,6 +31,11 @@ SOURCE_FILES = {
         'moralchoice': 'results/processed/moralchoice_results.csv',
         'morables': 'results/processed/morables_results.csv',
     },
+    'claude_opus': {
+        'ethics': 'results/processed/claude_opus_ethics_results.csv',
+        'moralchoice': 'results/processed/claude_opus_moralchoice_results.csv',
+        'morables': 'results/processed/claude_opus_morables_results.csv',
+    },
     'gemini': {
         'ethics': 'results/processed/gemini_ethics_results.csv',
         'moralchoice': 'results/processed/gemini_moralchoice_results.csv',
@@ -53,7 +58,7 @@ def _checkpoint_key(row: dict, source: str) -> tuple:
     """Build a unique key for resume support."""
     item_id = row['item_id']
     run = row['run']
-    if source == 'claude':
+    if source in ('claude', 'claude_opus'):
         return (item_id, str(row.get('level', '')), str(row.get('thinking', '')), str(run))
     else:
         return (item_id, str(row.get('thinking_level', '')), str(row.get('prompt_level', '')), str(run))
@@ -99,8 +104,8 @@ def _build_output_row(row: dict, source: str, benchmark: str, judge_result: dict
         'source_model': source,
     }
 
-    # Add condition columns (different for Claude vs Gemini)
-    if source == 'claude':
+    # Add condition columns (different for Claude vs Gemini/GPT)
+    if source in ('claude', 'claude_opus'):
         output['level'] = row.get('level')
         output['thinking'] = row.get('thinking')
     else:
@@ -215,6 +220,8 @@ async def run_judge_async(args):
     sources = []
     if args.claude:
         sources.append('claude')
+    if args.claude_opus:
+        sources.append('claude_opus')
     if args.gemini:
         sources.append('gemini')
     if args.gemini_pro:
@@ -222,7 +229,7 @@ async def run_judge_async(args):
     if args.gpt:
         sources.append('gpt')
     if not sources:
-        sources = ['claude', 'gemini', 'gemini_pro', 'gpt']
+        sources = ['claude', 'claude_opus', 'gemini', 'gemini_pro', 'gpt']
 
     benchmarks = []
     if args.ethics:
@@ -288,7 +295,8 @@ def main():
         epilog="""
 Examples:
   python run_judge.py                    # Judge all benchmarks (all models)
-  python run_judge.py --claude           # Judge only Claude results
+  python run_judge.py --claude           # Judge only Claude Haiku results
+  python run_judge.py --claude-opus      # Judge only Claude Opus results
   python run_judge.py --gemini           # Judge only Gemini Flash results
   python run_judge.py --gemini-pro       # Judge only Gemini Pro results
   python run_judge.py --gpt             # Judge only GPT results
@@ -305,7 +313,9 @@ Examples:
 
     # Source selection
     parser.add_argument('--claude', action='store_true',
-                        help='Judge only Claude experiment results')
+                        help='Judge only Claude Haiku experiment results')
+    parser.add_argument('--claude-opus', dest='claude_opus', action='store_true',
+                        help='Judge only Claude Opus experiment results')
     parser.add_argument('--gemini', action='store_true',
                         help='Judge only Gemini experiment results')
     parser.add_argument('--gemini-pro', dest='gemini_pro', action='store_true',

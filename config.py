@@ -3,6 +3,7 @@ import os
 # API Configuration (Anthropic)
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"  # Anthropic model ID
+CLAUDE_OPUS_MODEL = "claude-opus-4-5-20250929"  # Anthropic model ID
 MODEL = CLAUDE_MODEL  # Default model (backwards compatibility)
 
 # API Configuration (OpenRouter - for Gemini and other models)

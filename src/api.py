@@ -68,7 +68,8 @@ rate_limiter = AsyncRateLimiter(config.CALLS_PER_MINUTE)
 def _build_api_kwargs(
     prompt: str,
     thinking_enabled: bool,
-    max_tokens_override: Optional[int]
+    max_tokens_override: Optional[int],
+    model: Optional[str] = None
 ) -> dict:
     """Build kwargs dict for Claude API call."""
     # Determine max_tokens
@@ -80,7 +81,7 @@ def _build_api_kwargs(
         max_tokens = config.MAX_TOKENS_NO_THINKING
 
     kwargs = {
-        "model": config.MODEL,
+        "model": model or config.MODEL,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
     }
@@ -122,7 +123,8 @@ def call_claude(
     thinking_enabled: bool = False,
     max_retries: int = 3,
     retry_delay: float = 5.0,
-    max_tokens_override: int = None
+    max_tokens_override: int = None,
+    model: str = None
 ) -> APIResponse:
     """
     Call Claude API with optional extended thinking (synchronous).
@@ -133,11 +135,12 @@ def call_claude(
         max_retries: Number of retries on failure
         retry_delay: Seconds to wait between retries
         max_tokens_override: Optional override for max_tokens (useful for Level 0)
+        model: Anthropic model ID (default: config.MODEL)
 
     Returns:
         APIResponse with content, thinking, and token counts
     """
-    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override)
+    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override, model=model)
 
     for attempt in range(max_retries):
         try:
@@ -167,7 +170,8 @@ async def call_claude_async(
     thinking_enabled: bool = False,
     max_retries: int = 3,
     retry_delay: float = 5.0,
-    max_tokens_override: int = None
+    max_tokens_override: int = None,
+    model: str = None
 ) -> APIResponse:
     """
     Call Claude API with optional extended thinking (asynchronous).
@@ -178,11 +182,12 @@ async def call_claude_async(
         max_retries: Number of retries on failure
         retry_delay: Seconds to wait between retries
         max_tokens_override: Optional override for max_tokens (useful for Level 0)
+        model: Anthropic model ID (default: config.MODEL)
 
     Returns:
         APIResponse with content, thinking, and token counts
     """
-    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override)
+    kwargs = _build_api_kwargs(prompt, thinking_enabled, max_tokens_override, model=model)
 
     for attempt in range(max_retries):
         try:
@@ -207,16 +212,16 @@ async def call_claude_async(
     raise RuntimeError("Max retries exceeded")
 
 
-def call_with_rate_limit(prompt: str, thinking_enabled: bool = False, max_tokens_override: int = None) -> APIResponse:
+def call_with_rate_limit(prompt: str, thinking_enabled: bool = False, max_tokens_override: int = None, model: str = None) -> APIResponse:
     """Call API with rate limiting (synchronous)."""
     time.sleep(60 / config.CALLS_PER_MINUTE)  # Simple rate limiting
-    return call_claude(prompt, thinking_enabled, max_tokens_override=max_tokens_override)
+    return call_claude(prompt, thinking_enabled, max_tokens_override=max_tokens_override, model=model)
 
 
-async def call_with_rate_limit_async(prompt: str, thinking_enabled: bool = False, max_tokens_override: int = None) -> APIResponse:
+async def call_with_rate_limit_async(prompt: str, thinking_enabled: bool = False, max_tokens_override: int = None, model: str = None) -> APIResponse:
     """Call API with rate limiting (asynchronous)."""
     await rate_limiter.acquire()
-    return await call_claude_async(prompt, thinking_enabled, max_tokens_override=max_tokens_override)
+    return await call_claude_async(prompt, thinking_enabled, max_tokens_override=max_tokens_override, model=model)
 
 
 def reset_rate_limiter():
