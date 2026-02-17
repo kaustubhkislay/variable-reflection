@@ -31,7 +31,14 @@ def _build_scenario_description(row: dict, benchmark: str) -> str:
             f'Question: What is the moral of this story?\n'
             f'Options: A through E (multiple choice)'
         )
-    return str(row.get("scenario", row.get("context", row.get("fable", ""))))
+    elif benchmark == "musr":
+        return (
+            f'Narrative: {row["narrative"][:500]}\n'
+            f'Question: {row["question"]}\n'
+            f'A) {row["option_a"]}\n'
+            f'B) {row["option_b"]}'
+        )
+    return str(row.get("scenario", row.get("context", row.get("fable", row.get("narrative", "")))))
 
 
 def _build_answer_space(benchmark: str) -> str:
@@ -42,6 +49,8 @@ def _build_answer_space(benchmark: str) -> str:
         return '"A" or "B"'
     elif benchmark == "morables":
         return '"A", "B", "C", "D", or "E"'
+    elif benchmark == "musr":
+        return '"A" or "B"'
     return "unknown"
 
 
@@ -52,6 +61,7 @@ def _build_flip_type_instruction(benchmark: str) -> str:
     """
     if benchmark == "moralchoice":
         return 'neutral (this benchmark has no ground truth correct answer)'
+    # ethics, morables, musr all have ground truth
     return 'none, beneficial, harmful, or neutral'
 
 

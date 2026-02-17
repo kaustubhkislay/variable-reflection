@@ -406,6 +406,145 @@ def get_morables_prompt(level: int, fable: str, options: list,
 
 
 # =============================================================================
+# MUSR (MURDER MYSTERIES) PROMPTS
+# =============================================================================
+
+# Answer instruction templates for MuSR (binary A/B, same as MoralChoice)
+MUSR_ANSWER_BINARY = """State your answer in tags: <answer>A</answer> or <answer>B</answer>"""
+
+MUSR_ANSWER_WITH_CONFIDENCE = """State your answer and confidence:
+- Your choice: <answer>A</answer> or <answer>B</answer>
+- Your confidence (0-100): <confidence>X</confidence>
+  (0 = just guessing, 50 = uncertain, 100 = completely certain)"""
+
+# Level 0 specific: Force immediate answer, no reasoning
+MUSR_ANSWER_LEVEL_0 = """Respond ONLY with the answer tags, no explanation:
+<answer>A</answer> or <answer>B</answer>
+<confidence>X</confidence>"""
+
+MUSR_ANSWER_LEVEL_0_BINARY = """Respond ONLY with: <answer>A</answer> or <answer>B</answer>"""
+
+# Base prompts (without answer instruction - will be appended based on mode)
+MUSR_PROMPTS_BASE = {
+    0: """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}""",
+
+    1: """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}""",
+
+    2: """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}
+
+Think step by step about the evidence in the narrative, then state your final answer.""",
+
+    3: """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}
+
+Before answering:
+1. Identify each suspect's motives and opportunities
+2. Consider the evidence for and against each suspect
+3. Evaluate which suspect the evidence most strongly implicates
+
+Then state your final answer.""",
+
+    4: """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}
+
+Before deciding:
+1. Which suspect does your initial reading of the evidence point to?
+2. Now make the strongest case for the OTHER suspect.
+3. How compelling is that alternative case?
+4. Does it change your conclusion?
+
+Provide your final answer.""",
+
+    "5_pass1": """{narrative}
+
+{question}
+
+A) {option_a}
+B) {option_b}
+
+Explain your reasoning, then state your final answer.""",
+
+    "5_pass2": """You previously analyzed the mystery and answered:
+
+{previous_response}
+
+Now reflect on your reasoning:
+1. Did you account for all the key evidence in the narrative?
+2. Could the evidence point to the other suspect instead?
+3. Weighing both cases, is your original answer correct?
+
+State your final answer."""
+}
+
+
+def get_musr_prompt(level: int, narrative: str, question: str,
+                    option_a: str, option_b: str,
+                    previous_response: str = None,
+                    include_confidence: bool = True) -> str:
+    """
+    Generate MuSR prompt for given level.
+
+    Args:
+        level: Reflection level (0-5)
+        narrative: The murder mystery narrative text
+        question: The question (e.g., "Who is the most likely murderer?")
+        option_a: First suspect option
+        option_b: Second suspect option
+        previous_response: Response from pass 1 (for level 5 pass 2 only)
+        include_confidence: If True, ask for both answer AND confidence.
+                           If False, ask for answer only.
+
+    Returns:
+        Formatted prompt string
+    """
+    # Select answer instruction (Level 0 uses special direct-response instruction)
+    if level == 0:
+        instruction = MUSR_ANSWER_LEVEL_0 if include_confidence else MUSR_ANSWER_LEVEL_0_BINARY
+    else:
+        instruction = MUSR_ANSWER_WITH_CONFIDENCE if include_confidence else MUSR_ANSWER_BINARY
+
+    # Get base prompt
+    if level == 5 and previous_response is None:
+        base = MUSR_PROMPTS_BASE["5_pass1"].format(
+            narrative=narrative, question=question,
+            option_a=option_a, option_b=option_b
+        )
+    elif level == 5 and previous_response is not None:
+        base = MUSR_PROMPTS_BASE["5_pass2"].format(previous_response=previous_response)
+    else:
+        base = MUSR_PROMPTS_BASE[level].format(
+            narrative=narrative, question=question,
+            option_a=option_a, option_b=option_b
+        )
+
+    # Combine base + instruction
+    return f"{base}\n\n{instruction}"
+
+
+# =============================================================================
 # JUDGE PROMPTS (LLM-as-Judge for flip-flop detection)
 # =============================================================================
 

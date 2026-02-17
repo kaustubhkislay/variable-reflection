@@ -1,4 +1,7 @@
-"""API wrapper for GPT 5.2 via OpenRouter with reasoning level control.
+"""API wrapper for Qwen 3 via OpenRouter with reasoning token budget control.
+
+Unlike GPT/Gemini which use named reasoning effort levels, Qwen uses a numeric
+reasoning token budget (e.g. 1024, 2048, 4096, 8192, 16384, 32768).
 
 Reuses OpenRouter clients and rate limiter from gemini_api.py.
 """
@@ -18,36 +21,36 @@ from src.gemini_api import (
 
 
 @dataclass
-class GPTResponse:
-    """Standardized response from GPT API via OpenRouter."""
+class QwenResponse:
+    """Standardized response from Qwen API via OpenRouter."""
     content: str
     thinking: Optional[str]
     input_tokens: int
     output_tokens: int
 
 
-# Valid GPT reasoning levels
-VALID_THINKING_LEVELS = {"none", "low", "medium", "high", "xhigh"}
+# Valid Qwen reasoning token budgets
+VALID_THINKING_LEVELS = {1024, 2048, 4096, 8192, 16384, 32768}
 
 
-def validate_thinking_level(thinking_level: str) -> str:
-    """Validate and return thinking_level, defaulting to 'low' if invalid."""
-    if thinking_level in VALID_THINKING_LEVELS:
+def validate_thinking_level(thinking_level: int) -> int:
+    """Validate and return thinking_level, defaulting to 1024 if invalid."""
+    if isinstance(thinking_level, int) and thinking_level in VALID_THINKING_LEVELS:
         return thinking_level
-    return "low"
+    return 1024
 
 
-def _build_messages_and_params(prompt: str, thinking_level: str, max_tokens: int) -> tuple:
-    """Build messages and extra parameters for OpenRouter API call."""
+def _build_messages_and_params(prompt: str, thinking_level: int, max_tokens: int) -> tuple:
+    """Build messages and extra parameters for OpenRouter API call.
+
+    Unlike GPT/Gemini which use reasoning.effort (named levels),
+    Qwen uses reasoning.max_tokens (numeric token budget).
+    """
     messages = [{"role": "user", "content": prompt}]
 
     extra_body = {
-        "provider": {
-            "order": ["OpenAI"],
-            "allow_fallbacks": False
-        },
         "reasoning": {
-            "effort": validate_thinking_level(thinking_level),
+            "max_tokens": validate_thinking_level(thinking_level),
             "exclude": False  # Return thinking traces in response
         }
     }
@@ -55,7 +58,7 @@ def _build_messages_and_params(prompt: str, thinking_level: str, max_tokens: int
     return messages, extra_body
 
 
-def _parse_openrouter_response(response: Any) -> GPTResponse:
+def _parse_openrouter_response(response: Any) -> QwenResponse:
     """Parse OpenRouter API response into standardized format."""
     content = ""
     thinking = None
@@ -72,7 +75,7 @@ def _parse_openrouter_response(response: Any) -> GPTResponse:
         input_tokens = response.usage.prompt_tokens or 0
         output_tokens = response.usage.completion_tokens or 0
 
-    return GPTResponse(
+    return QwenResponse(
         content=content,
         thinking=thinking,
         input_tokens=input_tokens,
@@ -80,17 +83,32 @@ def _parse_openrouter_response(response: Any) -> GPTResponse:
     )
 
 
-def call_gpt(
+def call_qwen(
     prompt: str,
-    thinking_level: str = "low",
+    thinking_level: int = 1024,
     max_retries: int = 3,
     retry_delay: float = 5.0,
     max_tokens: int = None,
+    model: str = None,
     messages: list = None
-) -> GPTResponse:
-    """Call GPT 5.2 via OpenRouter with reasoning level control (synchronous)."""
+) -> QwenResponse:
+    """Call Qwen 3 via OpenRouter with reasoning token budget (synchronous).
+
+    Args:
+        prompt: The user prompt
+        thinking_level: Reasoning token budget (1024, 2048, 4096, 8192, 16384, 32768)
+        max_retries: Number of retries on failure
+        retry_delay: Seconds to wait between retries
+        max_tokens: Max output tokens (default from config)
+        model: OpenRouter model ID (required — one of QWEN_*_MODEL constants)
+
+    Returns:
+        QwenResponse with content, thinking, and token counts
+    """
     client = _get_sync_client()
-    max_tokens = max_tokens or config.GPT_MAX_TOKENS
+    max_tokens = max_tokens or config.QWEN_MAX_TOKENS
+    if model is None:
+        raise ValueError("model parameter is required for Qwen (specify QWEN_4B_MODEL, etc.)")
     if messages is not None:
         api_messages = messages
     else:
@@ -100,7 +118,7 @@ def call_gpt(
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
-                model=config.GPT_MODEL,
+                model=model,
                 messages=api_messages,
                 max_tokens=max_tokens,
                 extra_body=extra_body
@@ -125,17 +143,32 @@ def call_gpt(
     raise RuntimeError("Max retries exceeded for OpenRouter API")
 
 
-async def call_gpt_async(
+async def call_qwen_async(
     prompt: str,
-    thinking_level: str = "low",
+    thinking_level: int = 1024,
     max_retries: int = 3,
     retry_delay: float = 5.0,
     max_tokens: int = None,
+    model: str = None,
     messages: list = None
-) -> GPTResponse:
-    """Call GPT 5.2 via OpenRouter with reasoning level control (asynchronous)."""
+) -> QwenResponse:
+    """Call Qwen 3 via OpenRouter with reasoning token budget (asynchronous).
+
+    Args:
+        prompt: The user prompt
+        thinking_level: Reasoning token budget (1024, 2048, 4096, 8192, 16384, 32768)
+        max_retries: Number of retries on failure
+        retry_delay: Seconds to wait between retries
+        max_tokens: Max output tokens (default from config)
+        model: OpenRouter model ID (required)
+
+    Returns:
+        QwenResponse with content, thinking, and token counts
+    """
     client = _get_async_client()
-    max_tokens = max_tokens or config.GPT_MAX_TOKENS
+    max_tokens = max_tokens or config.QWEN_MAX_TOKENS
+    if model is None:
+        raise ValueError("model parameter is required for Qwen")
     if messages is not None:
         api_messages = messages
     else:
@@ -145,7 +178,7 @@ async def call_gpt_async(
     for attempt in range(max_retries):
         try:
             response = await client.chat.completions.create(
-                model=config.GPT_MODEL,
+                model=model,
                 messages=api_messages,
                 max_tokens=max_tokens,
                 extra_body=extra_body
@@ -170,29 +203,31 @@ async def call_gpt_async(
     raise RuntimeError("Max retries exceeded for OpenRouter API")
 
 
-def call_gpt_with_rate_limit(
+def call_qwen_with_rate_limit(
     prompt: str,
-    thinking_level: str = "low",
+    thinking_level: int = 1024,
     max_tokens: int = None,
+    model: str = None,
     messages: list = None
-) -> GPTResponse:
-    """Call GPT 5.2 via OpenRouter with rate limiting (synchronous)."""
+) -> QwenResponse:
+    """Call Qwen via OpenRouter with rate limiting (synchronous)."""
     time.sleep(60 / config.CALLS_PER_MINUTE)
-    return call_gpt(prompt, thinking_level, max_tokens=max_tokens, messages=messages)
+    return call_qwen(prompt, thinking_level, max_tokens=max_tokens, model=model, messages=messages)
 
 
-async def call_gpt_with_rate_limit_async(
+async def call_qwen_with_rate_limit_async(
     prompt: str,
-    thinking_level: str = "low",
+    thinking_level: int = 1024,
     max_tokens: int = None,
+    model: str = None,
     messages: list = None
-) -> GPTResponse:
-    """Call GPT 5.2 via OpenRouter with rate limiting (asynchronous)."""
+) -> QwenResponse:
+    """Call Qwen via OpenRouter with rate limiting (asynchronous)."""
     rate_limiter = _get_rate_limiter()
     await rate_limiter.acquire()
-    return await call_gpt_async(prompt, thinking_level, max_tokens=max_tokens, messages=messages)
+    return await call_qwen_async(prompt, thinking_level, max_tokens=max_tokens, model=model, messages=messages)
 
 
-def is_gpt_available() -> bool:
-    """Check if GPT via OpenRouter is available and configured."""
+def is_qwen_available() -> bool:
+    """Check if Qwen via OpenRouter is available and configured."""
     return OPENAI_AVAILABLE and bool(config.OPENROUTER_API_KEY)

@@ -30,27 +30,111 @@ SOURCE_FILES = {
         'ethics': 'results/processed/ethics_results.csv',
         'moralchoice': 'results/processed/moralchoice_results.csv',
         'morables': 'results/processed/morables_results.csv',
+        'musr': 'results/processed/musr_results.csv',
     },
     'claude_opus': {
         'ethics': 'results/processed/claude_opus_ethics_results.csv',
         'moralchoice': 'results/processed/claude_opus_moralchoice_results.csv',
         'morables': 'results/processed/claude_opus_morables_results.csv',
+        'musr': 'results/processed/claude_opus_musr_results.csv',
     },
     'gemini': {
         'ethics': 'results/processed/gemini_ethics_results.csv',
         'moralchoice': 'results/processed/gemini_moralchoice_results.csv',
         'morables': 'results/processed/gemini_morables_results.csv',
+        'musr': 'results/processed/gemini_musr_results.csv',
     },
     'gemini_pro': {
         'ethics': 'results/processed/gemini_pro_ethics_results.csv',
         'moralchoice': 'results/processed/gemini_pro_moralchoice_results.csv',
         'morables': 'results/processed/gemini_pro_morables_results.csv',
+        'musr': 'results/processed/gemini_pro_musr_results.csv',
     },
     'gpt': {
         'ethics': 'results/processed/gpt_ethics_results.csv',
         'moralchoice': 'results/processed/gpt_moralchoice_results.csv',
         'morables': 'results/processed/gpt_morables_results.csv',
-    }
+        'musr': 'results/processed/gpt_musr_results.csv',
+    },
+    'qwen_4b': {
+        'ethics': 'results/processed/qwen_4b_ethics_results.csv',
+        'moralchoice': 'results/processed/qwen_4b_moralchoice_results.csv',
+        'morables': 'results/processed/qwen_4b_morables_results.csv',
+        'musr': 'results/processed/qwen_4b_musr_results.csv',
+    },
+    'qwen_14b': {
+        'ethics': 'results/processed/qwen_14b_ethics_results.csv',
+        'moralchoice': 'results/processed/qwen_14b_moralchoice_results.csv',
+        'morables': 'results/processed/qwen_14b_morables_results.csv',
+        'musr': 'results/processed/qwen_14b_musr_results.csv',
+    },
+    'qwen_32b': {
+        'ethics': 'results/processed/qwen_32b_ethics_results.csv',
+        'moralchoice': 'results/processed/qwen_32b_moralchoice_results.csv',
+        'morables': 'results/processed/qwen_32b_morables_results.csv',
+        'musr': 'results/processed/qwen_32b_musr_results.csv',
+    },
+    'qwen_235b': {
+        'ethics': 'results/processed/qwen_235b_ethics_results.csv',
+        'moralchoice': 'results/processed/qwen_235b_moralchoice_results.csv',
+        'morables': 'results/processed/qwen_235b_morables_results.csv',
+        'musr': 'results/processed/qwen_235b_musr_results.csv',
+    },
+    # But-wait continuation sources
+    'butwait_claude': {
+        'ethics': 'results/processed/butwait_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_morables_results.csv',
+        'musr': 'results/processed/butwait_musr_results.csv',
+    },
+    'butwait_claude_opus': {
+        'ethics': 'results/processed/butwait_claude_opus_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_claude_opus_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_claude_opus_morables_results.csv',
+        'musr': 'results/processed/butwait_claude_opus_musr_results.csv',
+    },
+    'butwait_gemini': {
+        'ethics': 'results/processed/butwait_gemini_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_gemini_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_gemini_morables_results.csv',
+        'musr': 'results/processed/butwait_gemini_musr_results.csv',
+    },
+    'butwait_gemini_pro': {
+        'ethics': 'results/processed/butwait_gemini_pro_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_gemini_pro_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_gemini_pro_morables_results.csv',
+        'musr': 'results/processed/butwait_gemini_pro_musr_results.csv',
+    },
+    'butwait_gpt': {
+        'ethics': 'results/processed/butwait_gpt_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_gpt_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_gpt_morables_results.csv',
+        'musr': 'results/processed/butwait_gpt_musr_results.csv',
+    },
+    'butwait_qwen_4b': {
+        'ethics': 'results/processed/butwait_qwen_4b_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_qwen_4b_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_qwen_4b_morables_results.csv',
+        'musr': 'results/processed/butwait_qwen_4b_musr_results.csv',
+    },
+    'butwait_qwen_14b': {
+        'ethics': 'results/processed/butwait_qwen_14b_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_qwen_14b_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_qwen_14b_morables_results.csv',
+        'musr': 'results/processed/butwait_qwen_14b_musr_results.csv',
+    },
+    'butwait_qwen_32b': {
+        'ethics': 'results/processed/butwait_qwen_32b_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_qwen_32b_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_qwen_32b_morables_results.csv',
+        'musr': 'results/processed/butwait_qwen_32b_musr_results.csv',
+    },
+    'butwait_qwen_235b': {
+        'ethics': 'results/processed/butwait_qwen_235b_ethics_results.csv',
+        'moralchoice': 'results/processed/butwait_qwen_235b_moralchoice_results.csv',
+        'morables': 'results/processed/butwait_qwen_235b_morables_results.csv',
+        'musr': 'results/processed/butwait_qwen_235b_musr_results.csv',
+    },
 }
 
 
@@ -58,7 +142,7 @@ def _checkpoint_key(row: dict, source: str) -> tuple:
     """Build a unique key for resume support."""
     item_id = row['item_id']
     run = row['run']
-    if source in ('claude', 'claude_opus'):
+    if source in ('claude', 'claude_opus', 'butwait_claude', 'butwait_claude_opus'):
         return (item_id, str(row.get('level', '')), str(row.get('thinking', '')), str(run))
     else:
         return (item_id, str(row.get('thinking_level', '')), str(row.get('prompt_level', '')), str(run))
@@ -105,7 +189,7 @@ def _build_output_row(row: dict, source: str, benchmark: str, judge_result: dict
     }
 
     # Add condition columns (different for Claude vs Gemini/GPT)
-    if source in ('claude', 'claude_opus'):
+    if source in ('claude', 'claude_opus', 'butwait_claude', 'butwait_claude_opus'):
         output['level'] = row.get('level')
         output['thinking'] = row.get('thinking')
     else:
@@ -228,8 +312,24 @@ async def run_judge_async(args):
         sources.append('gemini_pro')
     if args.gpt:
         sources.append('gpt')
+    if args.qwen_4b:
+        sources.append('qwen_4b')
+    if args.qwen_14b:
+        sources.append('qwen_14b')
+    if args.qwen_32b:
+        sources.append('qwen_32b')
+    if args.qwen_235b:
+        sources.append('qwen_235b')
+    if args.but_wait:
+        # Add butwait variants of all selected sources (or all if none selected)
+        base_sources = sources if sources else [
+            'claude', 'claude_opus', 'gemini', 'gemini_pro', 'gpt',
+            'qwen_4b', 'qwen_14b', 'qwen_32b', 'qwen_235b'
+        ]
+        sources = [f'butwait_{s}' for s in base_sources]
     if not sources:
-        sources = ['claude', 'claude_opus', 'gemini', 'gemini_pro', 'gpt']
+        sources = ['claude', 'claude_opus', 'gemini', 'gemini_pro', 'gpt',
+                   'qwen_4b', 'qwen_14b', 'qwen_32b', 'qwen_235b']
 
     benchmarks = []
     if args.ethics:
@@ -238,8 +338,10 @@ async def run_judge_async(args):
         benchmarks.append('moralchoice')
     if args.morables:
         benchmarks.append('morables')
+    if args.musr:
+        benchmarks.append('musr')
     if not benchmarks:
-        benchmarks = ['ethics', 'moralchoice', 'morables']
+        benchmarks = ['ethics', 'moralchoice', 'morables', 'musr']
 
     # Process each source/benchmark combination
     all_results = {}
@@ -300,6 +402,8 @@ Examples:
   python run_judge.py --gemini           # Judge only Gemini Flash results
   python run_judge.py --gemini-pro       # Judge only Gemini Pro results
   python run_judge.py --gpt             # Judge only GPT results
+  python run_judge.py --qwen-4b         # Judge only Qwen 3 4B results
+  python run_judge.py --qwen-235b       # Judge only Qwen 3 235B results
   python run_judge.py --ethics           # Judge only ethics benchmark
   python run_judge.py --resume           # Resume from checkpoint
   python run_judge.py --dry-run          # Count rows, estimate cost
@@ -322,6 +426,16 @@ Examples:
                         help='Judge only Gemini Pro experiment results')
     parser.add_argument('--gpt', action='store_true',
                         help='Judge only GPT experiment results')
+    parser.add_argument('--qwen-4b', dest='qwen_4b', action='store_true',
+                        help='Judge only Qwen 3 4B experiment results')
+    parser.add_argument('--qwen-14b', dest='qwen_14b', action='store_true',
+                        help='Judge only Qwen 3 14B experiment results')
+    parser.add_argument('--qwen-32b', dest='qwen_32b', action='store_true',
+                        help='Judge only Qwen 3 32B experiment results')
+    parser.add_argument('--qwen-235b', dest='qwen_235b', action='store_true',
+                        help='Judge only Qwen 3 235B experiment results')
+    parser.add_argument('--but-wait', dest='but_wait', action='store_true',
+                        help='Judge but-wait continuation results (all models)')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true',
@@ -330,6 +444,8 @@ Examples:
                         help='Judge only MoralChoice benchmark')
     parser.add_argument('--morables', action='store_true',
                         help='Judge only MORABLES benchmark')
+    parser.add_argument('--musr', action='store_true',
+                        help='Judge only MuSR benchmark')
 
     args = parser.parse_args()
 

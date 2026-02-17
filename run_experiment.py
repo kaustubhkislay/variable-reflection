@@ -21,7 +21,7 @@ with open('.env', 'r') as f:
             if match:
                 os.environ[match.group(1)] = match.group(2)
 
-from prompts import get_ethics_prompt, get_moralchoice_prompt, get_morables_prompt
+from prompts import get_ethics_prompt, get_moralchoice_prompt, get_morables_prompt, get_musr_prompt
 from src.api import (
     call_with_rate_limit,
     call_with_rate_limit_async,
@@ -33,6 +33,7 @@ from src.extraction import (
     extract_ethics_answer,
     extract_moralchoice_answer,
     extract_morables_answer,
+    extract_musr_answer,
     extract_moralchoice_with_confidence,
     extract_confidence_score,
     categorize_confidence,
@@ -54,7 +55,53 @@ from src.gpt_api import (
     is_gpt_available,
     GPTResponse
 )
+from src.qwen_api import (
+    call_qwen_with_rate_limit,
+    call_qwen_with_rate_limit_async,
+    is_qwen_available,
+    QwenResponse
+)
+from src.but_wait import but_wait_loop_async, but_wait_loop_sync
 import config
+
+
+# =============================================================================
+# BUT-WAIT MODULE-LEVEL FLAG (set by CLI --but-wait)
+# =============================================================================
+_BUT_WAIT = False
+
+
+def _cp_path(base_path: str) -> str:
+    """Add butwait_ prefix to filename if but-wait mode is active."""
+    if _BUT_WAIT:
+        import os
+        dir_part = os.path.dirname(base_path)
+        filename = os.path.basename(base_path)
+        return os.path.join(dir_part, f"butwait_{filename}")
+    return base_path
+
+
+def _build_but_wait_response_data(bw_result, pass1_content=None, pass1_input=0, pass1_output=0):
+    """Build response_data dict from a ButWaitResult."""
+    if pass1_content is not None:
+        return {
+            'content': bw_result.content,
+            'thinking': bw_result.thinking,
+            'full_response': f"[PASS1]\n{pass1_content}\n\n[PASS2]\n{bw_result.full_response}",
+            'input_tokens': pass1_input + bw_result.input_tokens,
+            'output_tokens': pass1_output + bw_result.output_tokens,
+            'but_wait': True,
+            'num_continuations': bw_result.num_continuations,
+        }
+    return {
+        'content': bw_result.content,
+        'thinking': bw_result.thinking,
+        'full_response': bw_result.full_response,
+        'input_tokens': bw_result.input_tokens,
+        'output_tokens': bw_result.output_tokens,
+        'but_wait': True,
+        'num_continuations': bw_result.num_continuations,
+    }
 
 
 # =============================================================================
@@ -110,6 +157,7 @@ async def _run_single_item_async(prompt_fn, level, thinking, include_confidence,
         Response data dict with content, thinking, full_response, and token counts
     """
     max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
+    token_budget = max_tokens or (config.MAX_TOKENS_WITH_THINKING if thinking else config.MAX_TOKENS_NO_THINKING)
 
     if level == 5:
         # Two-pass reflection
@@ -120,10 +168,23 @@ async def _run_single_item_async(prompt_fn, level, thinking, include_confidence,
                            include_confidence=include_confidence)
         response2 = await call_with_rate_limit_async(prompt2, thinking, model=model)
 
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_with_rate_limit_async("", thinking, max_tokens_override=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt2, response2, _bw_call, token_budget)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_response_data(response1, response2)
     else:
         prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
         response = await call_with_rate_limit_async(prompt, thinking, max_tokens_override=max_tokens, model=model)
+
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_with_rate_limit_async("", thinking, max_tokens_override=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt, response, _bw_call, token_budget)
+            return _build_but_wait_response_data(bw)
 
         return _build_response_data(response)
 
@@ -144,6 +205,7 @@ def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, model=
         Response data dict with content, thinking, full_response, and token counts
     """
     max_tokens = config.MAX_TOKENS_LEVEL_0 if (level == 0 and not thinking) else None
+    token_budget = max_tokens or (config.MAX_TOKENS_WITH_THINKING if thinking else config.MAX_TOKENS_NO_THINKING)
 
     if level == 5:
         # Two-pass reflection
@@ -154,10 +216,23 @@ def _run_single_item_sync(prompt_fn, level, thinking, include_confidence, model=
                            include_confidence=include_confidence)
         response2 = call_with_rate_limit(prompt2, thinking, model=model)
 
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_with_rate_limit("", thinking, max_tokens_override=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt2, response2, _bw_call, token_budget)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_response_data(response1, response2)
     else:
         prompt = prompt_fn(level, **prompt_kwargs, include_confidence=include_confidence)
         response = call_with_rate_limit(prompt, thinking, max_tokens_override=max_tokens, model=model)
+
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_with_rate_limit("", thinking, max_tokens_override=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt, response, _bw_call, token_budget)
+            return _build_but_wait_response_data(bw)
 
         return _build_response_data(response)
 
@@ -190,6 +265,15 @@ async def run_single_item_morables_async(row, level, thinking, include_confidenc
     )
 
 
+async def run_single_item_musr_async(row, level, thinking, include_confidence=True, model=None):
+    """Run single MuSR item at given condition (async)."""
+    return await _run_single_item_async(
+        get_musr_prompt, level, thinking, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
 # Benchmark-specific runners (sync) - thin wrappers for backwards compatibility
 
 def run_single_item_ethics(row, level, thinking, include_confidence=True, model=None):
@@ -215,6 +299,15 @@ def run_single_item_morables(row, level, thinking, include_confidence=True, mode
     return _run_single_item_sync(
         get_morables_prompt, level, thinking, include_confidence,
         model=model, fable=row['fable'], options=options
+    )
+
+
+def run_single_item_musr(row, level, thinking, include_confidence=True, model=None):
+    """Run single MuSR item at given condition (sync)."""
+    return _run_single_item_sync(
+        get_musr_prompt, level, thinking, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
     )
 
 
@@ -259,10 +352,23 @@ async def _run_single_item_gemini_async(prompt_fn, prompt_level, thinking_level,
                            include_confidence=include_confidence)
         response2 = await call_gemini_with_rate_limit_async(prompt2, thinking_level, model=model)
 
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_gemini_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt2, response2, _bw_call, config.GEMINI_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_gemini_response_data(response1, response2)
     else:
         prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
         response = await call_gemini_with_rate_limit_async(prompt, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_gemini_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt, response, _bw_call, config.GEMINI_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
 
         return _build_gemini_response_data(response)
 
@@ -282,10 +388,23 @@ def _run_single_item_gemini_sync(prompt_fn, prompt_level, thinking_level, includ
                            include_confidence=include_confidence)
         response2 = call_gemini_with_rate_limit(prompt2, thinking_level, model=model)
 
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_gemini_with_rate_limit("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt2, response2, _bw_call, config.GEMINI_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_gemini_response_data(response1, response2)
     else:
         prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
         response = call_gemini_with_rate_limit(prompt, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_gemini_with_rate_limit("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt, response, _bw_call, config.GEMINI_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
 
         return _build_gemini_response_data(response)
 
@@ -318,6 +437,15 @@ async def run_single_item_morables_gemini_async(row, prompt_level, thinking_leve
     )
 
 
+async def run_single_item_musr_gemini_async(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MuSR item with Gemini (async)."""
+    return await _run_single_item_gemini_async(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
 # Gemini benchmark-specific runners (sync)
 
 def run_single_item_ethics_gemini(row, prompt_level, thinking_level, include_confidence=True, model=None):
@@ -343,6 +471,15 @@ def run_single_item_morables_gemini(row, prompt_level, thinking_level, include_c
     return _run_single_item_gemini_sync(
         get_morables_prompt, prompt_level, thinking_level, include_confidence,
         model=model, fable=row['fable'], options=options
+    )
+
+
+def run_single_item_musr_gemini(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MuSR item with Gemini (sync)."""
+    return _run_single_item_gemini_sync(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
     )
 
 
@@ -384,10 +521,23 @@ async def _run_single_item_gpt_async(prompt_fn, prompt_level, thinking_level, in
                            include_confidence=include_confidence)
         response2 = await call_gpt_with_rate_limit_async(prompt2, thinking_level)
 
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_gpt_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, messages=messages)
+            bw = await but_wait_loop_async(prompt2, response2, _bw_call, config.GPT_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_gpt_response_data(response1, response2)
     else:
         prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
         response = await call_gpt_with_rate_limit_async(prompt, thinking_level)
+
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_gpt_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, messages=messages)
+            bw = await but_wait_loop_async(prompt, response, _bw_call, config.GPT_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
 
         return _build_gpt_response_data(response)
 
@@ -406,10 +556,23 @@ def _run_single_item_gpt_sync(prompt_fn, prompt_level, thinking_level, include_c
                            include_confidence=include_confidence)
         response2 = call_gpt_with_rate_limit(prompt2, thinking_level)
 
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_gpt_with_rate_limit("", thinking_level, max_tokens=max_tokens, messages=messages)
+            bw = but_wait_loop_sync(prompt2, response2, _bw_call, config.GPT_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
         return _build_gpt_response_data(response1, response2)
     else:
         prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
         response = call_gpt_with_rate_limit(prompt, thinking_level)
+
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_gpt_with_rate_limit("", thinking_level, max_tokens=max_tokens, messages=messages)
+            bw = but_wait_loop_sync(prompt, response, _bw_call, config.GPT_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
 
         return _build_gpt_response_data(response)
 
@@ -442,6 +605,15 @@ async def run_single_item_morables_gpt_async(row, prompt_level, thinking_level, 
     )
 
 
+async def run_single_item_musr_gpt_async(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MuSR item with GPT (async)."""
+    return await _run_single_item_gpt_async(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
 # GPT benchmark-specific runners (sync)
 
 def run_single_item_ethics_gpt(row, prompt_level, thinking_level, include_confidence=True):
@@ -467,6 +639,183 @@ def run_single_item_morables_gpt(row, prompt_level, thinking_level, include_conf
     return _run_single_item_gpt_sync(
         get_morables_prompt, prompt_level, thinking_level, include_confidence,
         fable=row['fable'], options=options
+    )
+
+
+def run_single_item_musr_gpt(row, prompt_level, thinking_level, include_confidence=True):
+    """Run single MuSR item with GPT (sync)."""
+    return _run_single_item_gpt_sync(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+# =============================================================================
+# QWEN SINGLE ITEM RUNNERS
+# =============================================================================
+
+def _build_qwen_response_data(response1, response2=None):
+    """Build standardized response data dict from Qwen API response(s)."""
+    if response2 is not None:
+        return {
+            'content': response2.content,
+            'thinking': response2.thinking,
+            'full_response': f"[PASS1]\n{response1.content}\n\n[PASS2]\n{response2.content}",
+            'input_tokens': response1.input_tokens + response2.input_tokens,
+            'output_tokens': response1.output_tokens + response2.output_tokens,
+        }
+    else:
+        return {
+            'content': response1.content,
+            'thinking': response1.thinking,
+            'full_response': response1.content,
+            'input_tokens': response1.input_tokens,
+            'output_tokens': response1.output_tokens,
+        }
+
+
+async def _run_single_item_qwen_async(prompt_fn, prompt_level, thinking_level, include_confidence, model=None, **prompt_kwargs):
+    """
+    Generic async single-item runner for Qwen.
+
+    Varies both prompt_level and thinking_level (reasoning token budget) parameters.
+    """
+    if prompt_level == 5:
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = await call_qwen_with_rate_limit_async(prompt1, thinking_level, model=model)
+
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = await call_qwen_with_rate_limit_async(prompt2, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_qwen_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt2, response2, _bw_call, config.QWEN_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
+        return _build_qwen_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = await call_qwen_with_rate_limit_async(prompt, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            async def _bw_call(*, messages, max_tokens):
+                return await call_qwen_with_rate_limit_async("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = await but_wait_loop_async(prompt, response, _bw_call, config.QWEN_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
+
+        return _build_qwen_response_data(response)
+
+
+def _run_single_item_qwen_sync(prompt_fn, prompt_level, thinking_level, include_confidence, model=None, **prompt_kwargs):
+    """
+    Generic sync single-item runner for Qwen.
+
+    Varies both prompt_level and thinking_level (reasoning token budget) parameters.
+    """
+    if prompt_level == 5:
+        prompt1 = prompt_fn(5, **prompt_kwargs, include_confidence=include_confidence)
+        response1 = call_qwen_with_rate_limit(prompt1, thinking_level, model=model)
+
+        prompt2 = prompt_fn(5, **prompt_kwargs, previous_response=response1.content,
+                           include_confidence=include_confidence)
+        response2 = call_qwen_with_rate_limit(prompt2, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_qwen_with_rate_limit("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt2, response2, _bw_call, config.QWEN_MAX_TOKENS)
+            return _build_but_wait_response_data(bw, pass1_content=response1.content,
+                                                  pass1_input=response1.input_tokens, pass1_output=response1.output_tokens)
+
+        return _build_qwen_response_data(response1, response2)
+    else:
+        prompt = prompt_fn(prompt_level, **prompt_kwargs, include_confidence=include_confidence)
+        response = call_qwen_with_rate_limit(prompt, thinking_level, model=model)
+
+        if _BUT_WAIT:
+            def _bw_call(*, messages, max_tokens):
+                return call_qwen_with_rate_limit("", thinking_level, max_tokens=max_tokens, model=model, messages=messages)
+            bw = but_wait_loop_sync(prompt, response, _bw_call, config.QWEN_MAX_TOKENS)
+            return _build_but_wait_response_data(bw)
+
+        return _build_qwen_response_data(response)
+
+
+# Qwen benchmark-specific runners (async)
+
+async def run_single_item_ethics_qwen_async(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single ETHICS item with Qwen (async)."""
+    return await _run_single_item_qwen_async(
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, scenario=row['scenario']
+    )
+
+
+async def run_single_item_moralchoice_qwen_async(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MoralChoice item with Qwen (async)."""
+    return await _run_single_item_qwen_async(
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, context=row['context'], option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+async def run_single_item_morables_qwen_async(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MORABLES item with Qwen (async)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return await _run_single_item_qwen_async(
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, fable=row['fable'], options=options
+    )
+
+
+async def run_single_item_musr_qwen_async(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MuSR item with Qwen (async)."""
+    return await _run_single_item_qwen_async(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+# Qwen benchmark-specific runners (sync)
+
+def run_single_item_ethics_qwen(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single ETHICS item with Qwen (sync)."""
+    return _run_single_item_qwen_sync(
+        get_ethics_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, scenario=row['scenario']
+    )
+
+
+def run_single_item_moralchoice_qwen(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MoralChoice item with Qwen (sync)."""
+    return _run_single_item_qwen_sync(
+        get_moralchoice_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, context=row.get('context', ''), option_a=row['option_a'], option_b=row['option_b']
+    )
+
+
+def run_single_item_morables_qwen(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MORABLES item with Qwen (sync)."""
+    options = [row['option_a'], row['option_b'], row['option_c'],
+               row['option_d'], row['option_e']]
+    return _run_single_item_qwen_sync(
+        get_morables_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, fable=row['fable'], options=options
+    )
+
+
+def run_single_item_musr_qwen(row, prompt_level, thinking_level, include_confidence=True, model=None):
+    """Run single MuSR item with Qwen (sync)."""
+    return _run_single_item_qwen_sync(
+        get_musr_prompt, prompt_level, thinking_level, include_confidence,
+        model=model, narrative=row['narrative'], question=row['question'],
+        option_a=row['option_a'], option_b=row['option_b']
     )
 
 
@@ -499,6 +848,8 @@ def build_ethics_result(row, level, thinking, run, response_data, include_confid
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
     if model_label is not None:
@@ -529,6 +880,8 @@ def build_moralchoice_result(row, level, thinking, run, response_data, include_c
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
     if model_label is not None:
@@ -564,6 +917,43 @@ def build_morables_result(row, level, thinking, run, response_data, include_conf
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+    if model_label is not None:
+        result['model'] = model_label
+    return result
+
+
+def build_musr_result(row, level, thinking, run, response_data, include_confidence, model_label=None):
+    """Build result dict for MuSR item."""
+    extracted = extract_musr_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == ['A', 'B'][row['correct_idx']]) if extracted else None
+
+    result = {
+        'item_id': row['item_id'],
+        'narrative': row['narrative'][:200],
+        'question': row['question'],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B'][row['correct_idx']],
+        'level': level,
+        'thinking': thinking,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
     if model_label is not None:
@@ -599,6 +989,8 @@ def build_gpt_ethics_result(row, prompt_level, thinking_level, run, response_dat
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
 
@@ -627,6 +1019,8 @@ def build_gpt_moralchoice_result(row, prompt_level, thinking_level, run, respons
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
 
@@ -648,6 +1042,169 @@ def build_gpt_morables_result(row, prompt_level, thinking_level, run, response_d
         'prompt_level': prompt_level,
         'thinking_level': thinking_level,
         'model': 'gpt-5.2',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gpt_musr_result(row, prompt_level, thinking_level, run, response_data, include_confidence):
+    """Build result dict for MuSR item (GPT version)."""
+    extracted = extract_musr_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == ['A', 'B'][row['correct_idx']]) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'narrative': row['narrative'][:200],
+        'question': row['question'],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B'][row['correct_idx']],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': 'gpt-5.2',
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+# Qwen result builders
+
+def build_qwen_ethics_result(row, prompt_level, thinking_level, run, response_data, include_confidence, model_label='qwen3-235b'):
+    """Build result dict for ETHICS item (Qwen version)."""
+    extracted = extract_ethics_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == row['label']) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'subscale': row.get('subscale', ''),
+        'scenario': row['scenario'][:200],
+        'label': row['label'],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': model_label,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_qwen_moralchoice_result(row, prompt_level, thinking_level, run, response_data, include_confidence, model_label='qwen3-235b'):
+    """Build result dict for MoralChoice item (Qwen version)."""
+    extraction = extract_moralchoice_with_confidence(response_data['content'])
+
+    return {
+        'item_id': row['item_id'],
+        'context': row['context'][:200],
+        'option_a': row['option_a'][:100],
+        'option_b': row['option_b'][:100],
+        'ambiguity': row.get('ambiguity', None),
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': model_label,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extraction['answer'],
+        'confidence': extraction['confidence'],
+        'confidence_category': extraction['confidence_category'],
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_qwen_morables_result(row, prompt_level, thinking_level, run, response_data, include_confidence, model_label='qwen3-235b'):
+    """Build result dict for MORABLES item (Qwen version)."""
+    extracted = extract_morables_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+
+    letter_to_idx = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+    extracted_idx = letter_to_idx.get(extracted)
+    correct = extracted_idx == row['correct_idx'] if extracted_idx is not None else None
+
+    return {
+        'item_id': row['item_id'],
+        'fable': row['fable'][:200],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B', 'C', 'D', 'E'][row['correct_idx']],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': model_label,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_qwen_musr_result(row, prompt_level, thinking_level, run, response_data, include_confidence, model_label='qwen3-235b'):
+    """Build result dict for MuSR item (Qwen version)."""
+    extracted = extract_musr_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == ['A', 'B'][row['correct_idx']]) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'narrative': row['narrative'][:200],
+        'question': row['question'],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B'][row['correct_idx']],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': model_label,
         'run': run,
         'response': response_data['full_response'],
         'thinking_content': response_data['thinking'],
@@ -733,6 +1290,24 @@ def load_morables_data(sample_size: Optional[int] = None) -> Optional[pd.DataFra
     return morables
 
 
+def load_musr_data(sample_size: Optional[int] = None) -> Optional[pd.DataFrame]:
+    """Load and optionally sample MuSR data."""
+    data_path = "data/musr/musr_sample.csv"
+    if not Path(data_path).exists():
+        print(f"MuSR: {data_path} not found. Skipping.")
+        return None
+
+    musr = pd.read_csv(data_path)
+
+    if sample_size and len(musr) > sample_size:
+        musr = musr.sample(n=sample_size, random_state=config.RANDOM_SEED)
+        print(f"  Using {len(musr)} items (sampled)")
+    else:
+        print(f"  Using {len(musr)} items")
+
+    return musr
+
+
 def _build_error_result(row, level, thinking, run, error, extra_fields=None):
     """Build standardized error result dict."""
     result = {
@@ -775,6 +1350,7 @@ def _run_experiment_sync(
         include_confidence: Whether to include confidence scoring
         model_label: Model label for logging (default: None uses benchmark_name only)
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     results = []
     total_conditions = len(LEVELS) * len(THINKING_CONDITIONS) * N_RUNS
     condition_num = 0
@@ -856,6 +1432,23 @@ def run_morables_experiment(sample_size=None, include_confidence=True):
     )
 
 
+def run_musr_experiment(sample_size=None, include_confidence=True):
+    """Run full MuSR experiment (sync)."""
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/musr_checkpoint.csv",
+        item_runner=run_single_item_musr,
+        result_builder=build_musr_result,
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence
+    )
+
+
 # =============================================================================
 # ASYNC EXPERIMENT RUNNERS
 # =============================================================================
@@ -912,6 +1505,7 @@ async def _run_experiment_async(
     Returns:
         List of result dictionaries
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     log_prefix = f"{model_label} " if model_label else ""
 
     # Load existing progress if resuming
@@ -1012,6 +1606,24 @@ async def run_morables_experiment_async(results_queue: asyncio.Queue, sample_siz
     )
 
 
+async def run_musr_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment asynchronously."""
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_musr_async,
+        result_builder=build_musr_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
 # =============================================================================
 # CLAUDE OPUS EXPERIMENT ENTRY POINTS
 # =============================================================================
@@ -1066,6 +1678,24 @@ def run_claude_opus_morables_experiment(sample_size=None, include_confidence=Tru
         checkpoint_path="results/raw/claude_opus_morables_checkpoint.csv",
         item_runner=partial(run_single_item_morables, model=config.CLAUDE_OPUS_MODEL),
         result_builder=partial(build_morables_result, model_label='claude-opus-4.5'),
+        error_extra_fields_fn=None,
+        include_confidence=include_confidence,
+        model_label='claude-opus-4.5'
+    )
+
+
+def run_claude_opus_musr_experiment(sample_size=None, include_confidence=True):
+    """Run full MuSR experiment with Claude Opus (sync)."""
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/claude_opus_musr_checkpoint.csv",
+        item_runner=partial(run_single_item_musr, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_musr_result, model_label='claude-opus-4.5'),
         error_extra_fields_fn=None,
         include_confidence=include_confidence,
         model_label='claude-opus-4.5'
@@ -1134,6 +1764,26 @@ async def run_claude_opus_morables_experiment_async(results_queue: asyncio.Queue
     )
 
 
+async def run_claude_opus_musr_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Claude Opus asynchronously."""
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/claude_opus_musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_musr_async, model=config.CLAUDE_OPUS_MODEL),
+        result_builder=partial(build_musr_result, model_label='claude-opus-4.5'),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label='claude-opus-4.5',
+        file_prefix='claude_opus'
+    )
+
+
 # =============================================================================
 # GEMINI EXPERIMENT RUNNERS
 # =============================================================================
@@ -1164,6 +1814,8 @@ def build_gemini_ethics_result(row, prompt_level, thinking_level, run, response_
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
 
@@ -1192,6 +1844,8 @@ def build_gemini_moralchoice_result(row, prompt_level, thinking_level, run, resp
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
 
@@ -1225,6 +1879,41 @@ def build_gemini_morables_result(row, prompt_level, thinking_level, run, respons
         'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
         'input_tokens': response_data['input_tokens'],
         'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+
+def build_gemini_musr_result(row, prompt_level, thinking_level, run, response_data, include_confidence, model_label='gemini-3-flash'):
+    """Build result dict for MuSR item (Gemini version)."""
+    extracted = extract_musr_answer(response_data['content'])
+    confidence = extract_confidence_score(response_data['content']) if include_confidence else None
+    correct = (extracted == ['A', 'B'][row['correct_idx']]) if extracted else None
+
+    return {
+        'item_id': row['item_id'],
+        'narrative': row['narrative'][:200],
+        'question': row['question'],
+        'correct_idx': row['correct_idx'],
+        'correct_answer': ['A', 'B'][row['correct_idx']],
+        'prompt_level': prompt_level,
+        'thinking_level': thinking_level,
+        'model': model_label,
+        'run': run,
+        'response': response_data['full_response'],
+        'thinking_content': response_data['thinking'],
+        'extracted_answer': extracted,
+        'correct': correct,
+        'confidence': confidence,
+        'confidence_category': categorize_confidence(confidence),
+        'response_length': len(response_data['full_response'].split()),
+        'reasoning_markers': count_reasoning_markers(response_data['full_response']),
+        'uncertainty_markers': count_uncertainty_markers(response_data['full_response']),
+        'input_tokens': response_data['input_tokens'],
+        'output_tokens': response_data['output_tokens'],
+        'but_wait': response_data.get('but_wait', False),
+        'num_continuations': response_data.get('num_continuations', 0),
         'timestamp': datetime.now().isoformat(),
     }
 
@@ -1243,6 +1932,7 @@ def _run_gemini_experiment_sync(
 
     Varies both prompt_level and thinking_level parameters.
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     results = []
     total_conditions = len(config.GEMINI_PROMPT_LEVELS) * len(config.GEMINI_THINKING_LEVELS) * config.GEMINI_N_RUNS
     condition_num = 0
@@ -1295,6 +1985,7 @@ async def _run_gemini_experiment_async(
 
     Varies both prompt_level and thinking_level parameters.
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     # Load existing progress if resuming
     completed = set()
     results = []
@@ -1409,6 +2100,26 @@ def run_gemini_morables_experiment(sample_size=None, include_confidence=True):
     )
 
 
+def run_gemini_musr_experiment(sample_size=None, include_confidence=True):
+    """Run full MuSR experiment with Gemini (sync)."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_gemini_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gemini_musr_checkpoint.csv",
+        item_runner=run_single_item_musr_gemini,
+        result_builder=build_gemini_musr_result,
+        include_confidence=include_confidence
+    )
+
+
 # Gemini experiment entry points (async)
 
 async def run_gemini_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
@@ -1472,6 +2183,28 @@ async def run_gemini_morables_experiment_async(results_queue: asyncio.Queue, sam
         results_queue=results_queue,
         item_runner=run_single_item_morables_gemini_async,
         result_builder=build_gemini_morables_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+async def run_gemini_musr_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Gemini asynchronously."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_gemini_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gemini_musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_musr_gemini_async,
+        result_builder=build_gemini_musr_result,
         include_confidence=include_confidence,
         resume=resume
     )
@@ -1541,6 +2274,27 @@ def run_gemini_pro_morables_experiment(sample_size=None, include_confidence=True
         checkpoint_path="results/raw/gemini_pro_morables_checkpoint.csv",
         item_runner=partial(run_single_item_morables_gemini, model=config.GEMINI_PRO_MODEL),
         result_builder=partial(build_gemini_morables_result, model_label='gemini-3-pro'),
+        include_confidence=include_confidence,
+        model_label='gemini-3-pro'
+    )
+
+
+def run_gemini_pro_musr_experiment(sample_size=None, include_confidence=True):
+    """Run full MuSR experiment with Gemini Pro (sync)."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_gemini_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gemini_pro_musr_checkpoint.csv",
+        item_runner=partial(run_single_item_musr_gemini, model=config.GEMINI_PRO_MODEL),
+        result_builder=partial(build_gemini_musr_result, model_label='gemini-3-pro'),
         include_confidence=include_confidence,
         model_label='gemini-3-pro'
     )
@@ -1620,6 +2374,30 @@ async def run_gemini_pro_morables_experiment_async(results_queue: asyncio.Queue,
     )
 
 
+async def run_gemini_pro_musr_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Gemini Pro asynchronously."""
+    if not is_gemini_available():
+        print("Gemini via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_gemini_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gemini_pro_musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_musr_gemini_async, model=config.GEMINI_PRO_MODEL),
+        result_builder=partial(build_gemini_musr_result, model_label='gemini-3-pro'),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label='gemini-3-pro',
+        file_prefix='gemini_pro'
+    )
+
+
 # =============================================================================
 # GPT EXPERIMENT RUNNERS
 # =============================================================================
@@ -1637,6 +2415,7 @@ def _run_gpt_experiment_sync(
 
     Varies both prompt_level and thinking_level parameters.
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     results = []
     total_conditions = len(config.GPT_PROMPT_LEVELS) * len(config.GPT_THINKING_LEVELS) * config.GPT_N_RUNS
     condition_num = 0
@@ -1687,6 +2466,7 @@ async def _run_gpt_experiment_async(
 
     Varies both prompt_level and thinking_level parameters.
     """
+    checkpoint_path = _cp_path(checkpoint_path)
     completed = set()
     results = []
     if resume:
@@ -1798,6 +2578,26 @@ def run_gpt_morables_experiment(sample_size=None, include_confidence=True):
     )
 
 
+def run_gpt_musr_experiment(sample_size=None, include_confidence=True):
+    """Run full MuSR experiment with GPT (sync)."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_gpt_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gpt_musr_checkpoint.csv",
+        item_runner=run_single_item_musr_gpt,
+        result_builder=build_gpt_musr_result,
+        include_confidence=include_confidence
+    )
+
+
 # GPT experiment entry points (async)
 
 async def run_gpt_ethics_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
@@ -1866,14 +2666,520 @@ async def run_gpt_morables_experiment_async(results_queue: asyncio.Queue, sample
     )
 
 
+async def run_gpt_musr_experiment_async(results_queue: asyncio.Queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with GPT asynchronously."""
+    if not is_gpt_available():
+        print("GPT via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_gpt_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path="results/raw/gpt_musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=run_single_item_musr_gpt_async,
+        result_builder=build_gpt_musr_result,
+        include_confidence=include_confidence,
+        resume=resume
+    )
+
+
+# =============================================================================
+# QWEN EXPERIMENT RUNNERS
+# =============================================================================
+
+def _run_qwen_experiment_sync(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True,
+    model_label: str = 'qwen3-235b'
+) -> pd.DataFrame:
+    """
+    Generic sync Qwen experiment runner.
+
+    Varies both prompt_level and thinking_level (reasoning token budget) parameters.
+    """
+    checkpoint_path = _cp_path(checkpoint_path)
+    results = []
+    total_conditions = len(config.QWEN_PROMPT_LEVELS) * len(config.QWEN_THINKING_LEVELS) * config.QWEN_N_RUNS
+    condition_num = 0
+
+    for run in range(config.QWEN_N_RUNS):
+        for prompt_level in config.QWEN_PROMPT_LEVELS:
+            for thinking_level in config.QWEN_THINKING_LEVELS:
+                condition_num += 1
+
+                print(f"\n[{condition_num}/{total_conditions}] "
+                      f"{model_label} {benchmark_name} Run {run+1}, L{prompt_level}, thinking={thinking_level}")
+
+                for _, row in tqdm(data.iterrows(), total=len(data),
+                                   desc=f"R{run+1}-L{prompt_level}-{thinking_level}"):
+                    try:
+                        response_data = item_runner(row, prompt_level, thinking_level, include_confidence)
+                        results.append(result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence))
+                    except Exception as e:
+                        print(f"Error on item {row['item_id']}: {e}")
+                        results.append({
+                            'item_id': row['item_id'],
+                            'prompt_level': prompt_level,
+                            'thinking_level': thinking_level,
+                            'model': model_label,
+                            'run': run,
+                            'error': str(e),
+                            'timestamp': datetime.now().isoformat(),
+                        })
+
+                # Checkpoint after each condition
+                pd.DataFrame(results).to_csv(checkpoint_path, index=False)
+
+    return pd.DataFrame(results)
+
+
+async def _run_qwen_experiment_async(
+    benchmark_name: str,
+    data: pd.DataFrame,
+    checkpoint_path: str,
+    results_queue: asyncio.Queue,
+    item_runner,
+    result_builder,
+    include_confidence: bool = True,
+    resume: bool = False,
+    model_label: str = 'qwen3-235b',
+    file_prefix: str = 'qwen_235b'
+) -> List[Dict[str, Any]]:
+    """
+    Generic async Qwen experiment runner with resume support.
+
+    Varies both prompt_level and thinking_level (reasoning token budget) parameters.
+    """
+    checkpoint_path = _cp_path(checkpoint_path)
+    completed = set()
+    results = []
+    if resume:
+        completed = load_completed_from_checkpoint(checkpoint_path)
+        results = load_existing_results(checkpoint_path)
+        print(f"{model_label} {benchmark_name.upper()}: Resuming with {len(completed)} items already completed")
+
+    total_items = config.QWEN_N_RUNS * len(config.QWEN_PROMPT_LEVELS) * len(config.QWEN_THINKING_LEVELS) * len(data)
+    remaining = total_items - len(completed)
+    print(f"{model_label} {benchmark_name.upper()}: {len(data)} items, {remaining} API calls remaining")
+
+    benchmark_key = f"{file_prefix}_{benchmark_name.lower()}"
+
+    with tqdm(total=total_items, initial=len(completed), desc=f"{model_label} {benchmark_name.upper()}", unit="item", leave=True) as pbar:
+        for run in range(config.QWEN_N_RUNS):
+            for prompt_level in config.QWEN_PROMPT_LEVELS:
+                for thinking_level in config.QWEN_THINKING_LEVELS:
+                    pbar.set_postfix(level=prompt_level, thinking=thinking_level, run=run+1)
+
+                    for idx, row in data.iterrows():
+                        key = (row['item_id'], thinking_level, prompt_level, run)
+                        if key in completed:
+                            continue
+
+                        try:
+                            response_data = await item_runner(row, prompt_level, thinking_level, include_confidence)
+                            result = result_builder(row, prompt_level, thinking_level, run, response_data, include_confidence)
+                            result['benchmark'] = benchmark_key
+                            results.append(result)
+                            await results_queue.put((benchmark_key, result))
+                        except Exception as e:
+                            print(f"\n{model_label} {benchmark_name.upper()} error on {row['item_id']}: {e}")
+                            error_result = {
+                                'item_id': row['item_id'],
+                                'prompt_level': prompt_level,
+                                'thinking_level': thinking_level,
+                                'model': model_label,
+                                'run': run,
+                                'error': str(e),
+                                'benchmark': benchmark_key,
+                                'timestamp': datetime.now().isoformat(),
+                            }
+                            results.append(error_result)
+                        pbar.update(1)
+
+    print(f"{model_label} {benchmark_name.upper()}: Complete with {len(results)} results")
+    return results
+
+
+# Qwen experiment entry points (sync) — parameterized by model size
+
+def _run_qwen_size_ethics_sync(sample_size, include_confidence, model_id, model_label, file_prefix):
+    """Run ETHICS experiment with a specific Qwen model size (sync)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return None
+
+    return _run_qwen_experiment_sync(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path=f"results/raw/{file_prefix}_ethics_checkpoint.csv",
+        item_runner=partial(run_single_item_ethics_qwen, model=model_id),
+        result_builder=partial(build_qwen_ethics_result, model_label=model_label),
+        include_confidence=include_confidence,
+        model_label=model_label
+    )
+
+
+def _run_qwen_size_moralchoice_sync(sample_size, include_confidence, model_id, model_label, file_prefix):
+    """Run MoralChoice experiment with a specific Qwen model size (sync)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return None
+
+    return _run_qwen_experiment_sync(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path=f"results/raw/{file_prefix}_moralchoice_checkpoint.csv",
+        item_runner=partial(run_single_item_moralchoice_qwen, model=model_id),
+        result_builder=partial(build_qwen_moralchoice_result, model_label=model_label),
+        include_confidence=include_confidence,
+        model_label=model_label
+    )
+
+
+def _run_qwen_size_morables_sync(sample_size, include_confidence, model_id, model_label, file_prefix):
+    """Run MORABLES experiment with a specific Qwen model size (sync)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return None
+
+    return _run_qwen_experiment_sync(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path=f"results/raw/{file_prefix}_morables_checkpoint.csv",
+        item_runner=partial(run_single_item_morables_qwen, model=model_id),
+        result_builder=partial(build_qwen_morables_result, model_label=model_label),
+        include_confidence=include_confidence,
+        model_label=model_label
+    )
+
+
+def _run_qwen_size_musr_sync(sample_size, include_confidence, model_id, model_label, file_prefix):
+    """Run MuSR experiment with a specific Qwen model size (sync)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return None
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return None
+
+    return _run_qwen_experiment_sync(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path=f"results/raw/{file_prefix}_musr_checkpoint.csv",
+        item_runner=partial(run_single_item_musr_qwen, model=model_id),
+        result_builder=partial(build_qwen_musr_result, model_label=model_label),
+        include_confidence=include_confidence,
+        model_label=model_label
+    )
+
+
+# Qwen experiment entry points (async) — parameterized by model size
+
+async def _run_qwen_size_ethics_async(results_queue, sample_size, include_confidence, resume, model_id, model_label, file_prefix):
+    """Run ETHICS experiment with a specific Qwen model size (async)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    ethics = load_ethics_data(sample_size)
+    if ethics is None:
+        return []
+
+    return await _run_qwen_experiment_async(
+        benchmark_name="ETHICS",
+        data=ethics,
+        checkpoint_path=f"results/raw/{file_prefix}_ethics_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_ethics_qwen_async, model=model_id),
+        result_builder=partial(build_qwen_ethics_result, model_label=model_label),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label=model_label,
+        file_prefix=file_prefix
+    )
+
+
+async def _run_qwen_size_moralchoice_async(results_queue, sample_size, include_confidence, resume, model_id, model_label, file_prefix):
+    """Run MoralChoice experiment with a specific Qwen model size (async)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    mc = load_moralchoice_data(sample_size)
+    if mc is None:
+        return []
+
+    return await _run_qwen_experiment_async(
+        benchmark_name="MoralChoice",
+        data=mc,
+        checkpoint_path=f"results/raw/{file_prefix}_moralchoice_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_moralchoice_qwen_async, model=model_id),
+        result_builder=partial(build_qwen_moralchoice_result, model_label=model_label),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label=model_label,
+        file_prefix=file_prefix
+    )
+
+
+async def _run_qwen_size_morables_async(results_queue, sample_size, include_confidence, resume, model_id, model_label, file_prefix):
+    """Run MORABLES experiment with a specific Qwen model size (async)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    morables = load_morables_data(sample_size)
+    if morables is None:
+        return []
+
+    return await _run_qwen_experiment_async(
+        benchmark_name="MORABLES",
+        data=morables,
+        checkpoint_path=f"results/raw/{file_prefix}_morables_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_morables_qwen_async, model=model_id),
+        result_builder=partial(build_qwen_morables_result, model_label=model_label),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label=model_label,
+        file_prefix=file_prefix
+    )
+
+
+async def _run_qwen_size_musr_async(results_queue, sample_size, include_confidence, resume, model_id, model_label, file_prefix):
+    """Run MuSR experiment with a specific Qwen model size (async)."""
+    if not is_qwen_available():
+        print("Qwen via OpenRouter not available. Set OPENROUTER_API_KEY in .env file.")
+        return []
+
+    musr = load_musr_data(sample_size)
+    if musr is None:
+        return []
+
+    return await _run_qwen_experiment_async(
+        benchmark_name="MuSR",
+        data=musr,
+        checkpoint_path=f"results/raw/{file_prefix}_musr_checkpoint.csv",
+        results_queue=results_queue,
+        item_runner=partial(run_single_item_musr_qwen_async, model=model_id),
+        result_builder=partial(build_qwen_musr_result, model_label=model_label),
+        include_confidence=include_confidence,
+        resume=resume,
+        model_label=model_label,
+        file_prefix=file_prefix
+    )
+
+
+# Qwen per-size convenience entry points
+
+# Map of size key -> (model_id, model_label, file_prefix)
+QWEN_SIZES = {
+    'qwen_4b': (config.QWEN_4B_MODEL, 'qwen3-4b', 'qwen_4b'),
+    'qwen_14b': (config.QWEN_14B_MODEL, 'qwen3-14b', 'qwen_14b'),
+    'qwen_32b': (config.QWEN_32B_MODEL, 'qwen3-32b', 'qwen_32b'),
+    'qwen_235b': (config.QWEN_235B_MODEL, 'qwen3-235b', 'qwen_235b'),
+}
+
+
+# Generate sync entry points for each size
+def run_qwen_4b_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run ETHICS experiment with Qwen 3 4B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return _run_qwen_size_ethics_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_4b_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run MoralChoice experiment with Qwen 3 4B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return _run_qwen_size_moralchoice_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_4b_morables_experiment(sample_size=None, include_confidence=True):
+    """Run MORABLES experiment with Qwen 3 4B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return _run_qwen_size_morables_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_14b_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run ETHICS experiment with Qwen 3 14B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return _run_qwen_size_ethics_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_14b_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run MoralChoice experiment with Qwen 3 14B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return _run_qwen_size_moralchoice_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_14b_morables_experiment(sample_size=None, include_confidence=True):
+    """Run MORABLES experiment with Qwen 3 14B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return _run_qwen_size_morables_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_32b_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run ETHICS experiment with Qwen 3 32B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return _run_qwen_size_ethics_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_32b_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run MoralChoice experiment with Qwen 3 32B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return _run_qwen_size_moralchoice_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_32b_morables_experiment(sample_size=None, include_confidence=True):
+    """Run MORABLES experiment with Qwen 3 32B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return _run_qwen_size_morables_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_235b_ethics_experiment(sample_size=None, include_confidence=True):
+    """Run ETHICS experiment with Qwen 3 235B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return _run_qwen_size_ethics_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_235b_moralchoice_experiment(sample_size=None, include_confidence=True):
+    """Run MoralChoice experiment with Qwen 3 235B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return _run_qwen_size_moralchoice_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_235b_morables_experiment(sample_size=None, include_confidence=True):
+    """Run MORABLES experiment with Qwen 3 235B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return _run_qwen_size_morables_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_4b_musr_experiment(sample_size=None, include_confidence=True):
+    """Run MuSR experiment with Qwen 3 4B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return _run_qwen_size_musr_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_14b_musr_experiment(sample_size=None, include_confidence=True):
+    """Run MuSR experiment with Qwen 3 14B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return _run_qwen_size_musr_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_32b_musr_experiment(sample_size=None, include_confidence=True):
+    """Run MuSR experiment with Qwen 3 32B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return _run_qwen_size_musr_sync(sample_size, include_confidence, mid, ml, fp)
+
+def run_qwen_235b_musr_experiment(sample_size=None, include_confidence=True):
+    """Run MuSR experiment with Qwen 3 235B (sync)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return _run_qwen_size_musr_sync(sample_size, include_confidence, mid, ml, fp)
+
+
+# Generate async entry points for each size
+async def run_qwen_4b_ethics_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Qwen 3 4B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return await _run_qwen_size_ethics_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_4b_moralchoice_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Qwen 3 4B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return await _run_qwen_size_moralchoice_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_4b_morables_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Qwen 3 4B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return await _run_qwen_size_morables_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_14b_ethics_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Qwen 3 14B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return await _run_qwen_size_ethics_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_14b_moralchoice_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Qwen 3 14B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return await _run_qwen_size_moralchoice_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_14b_morables_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Qwen 3 14B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return await _run_qwen_size_morables_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_32b_ethics_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Qwen 3 32B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return await _run_qwen_size_ethics_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_32b_moralchoice_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Qwen 3 32B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return await _run_qwen_size_moralchoice_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_32b_morables_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Qwen 3 32B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return await _run_qwen_size_morables_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_235b_ethics_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run ETHICS experiment with Qwen 3 235B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return await _run_qwen_size_ethics_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_235b_moralchoice_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MoralChoice experiment with Qwen 3 235B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return await _run_qwen_size_moralchoice_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_235b_morables_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MORABLES experiment with Qwen 3 235B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return await _run_qwen_size_morables_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_4b_musr_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Qwen 3 4B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_4b']
+    return await _run_qwen_size_musr_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_14b_musr_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Qwen 3 14B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_14b']
+    return await _run_qwen_size_musr_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_32b_musr_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Qwen 3 32B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_32b']
+    return await _run_qwen_size_musr_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+async def run_qwen_235b_musr_experiment_async(results_queue, sample_size=None, include_confidence=True, resume=False):
+    """Run MuSR experiment with Qwen 3 235B (async)."""
+    mid, ml, fp = QWEN_SIZES['qwen_235b']
+    return await _run_qwen_size_musr_async(results_queue, sample_size, include_confidence, resume, mid, ml, fp)
+
+
 async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: int = 50, resume: bool = False):
     """Background task to write checkpoints as results come in."""
     # Load existing results if resuming
-    all_results = {'ethics': [], 'moralchoice': [], 'morables': [],
-                   'claude_opus_ethics': [], 'claude_opus_moralchoice': [], 'claude_opus_morables': [],
-                   'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': [],
-                   'gemini_pro_ethics': [], 'gemini_pro_moralchoice': [], 'gemini_pro_morables': [],
-                   'gpt_ethics': [], 'gpt_moralchoice': [], 'gpt_morables': []}
+    all_results = {'ethics': [], 'moralchoice': [], 'morables': [], 'musr': [],
+                   'claude_opus_ethics': [], 'claude_opus_moralchoice': [], 'claude_opus_morables': [], 'claude_opus_musr': [],
+                   'gemini_ethics': [], 'gemini_moralchoice': [], 'gemini_morables': [], 'gemini_musr': [],
+                   'gemini_pro_ethics': [], 'gemini_pro_moralchoice': [], 'gemini_pro_morables': [], 'gemini_pro_musr': [],
+                   'gpt_ethics': [], 'gpt_moralchoice': [], 'gpt_morables': [], 'gpt_musr': [],
+                   'qwen_4b_ethics': [], 'qwen_4b_moralchoice': [], 'qwen_4b_morables': [], 'qwen_4b_musr': [],
+                   'qwen_14b_ethics': [], 'qwen_14b_moralchoice': [], 'qwen_14b_morables': [], 'qwen_14b_musr': [],
+                   'qwen_32b_ethics': [], 'qwen_32b_moralchoice': [], 'qwen_32b_morables': [], 'qwen_32b_musr': [],
+                   'qwen_235b_ethics': [], 'qwen_235b_moralchoice': [], 'qwen_235b_morables': [], 'qwen_235b_musr': []}
     if resume:
         for bm in all_results.keys():
             all_results[bm] = load_existing_results(f"results/raw/{bm}_checkpoint.csv")
@@ -1909,12 +3215,16 @@ async def checkpoint_writer(results_queue: asyncio.Queue, checkpoint_interval: i
 
 def run_sync(args):
     """Run experiments synchronously (sequential)."""
+    global _BUT_WAIT
+    _BUT_WAIT = getattr(args, 'but_wait', False)
     start_time = datetime.now()
 
     print("=" * 60)
     print("STARTING EXPERIMENT (Sync Mode)")
     print("=" * 60)
     print(f"Start time: {start_time}")
+    if _BUT_WAIT:
+        print(f"But-wait continuation: ENABLED")
     if args.claude_opus:
         print(f"Model: Claude Opus 4.5")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -1935,6 +3245,12 @@ def run_sync(args):
         print(f"Prompt levels: {config.GPT_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GPT_THINKING_LEVELS}")
         print(f"Runs: {config.GPT_N_RUNS}")
+    elif args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
+        qwen_label = 'Qwen 3 4B' if args.qwen_4b else 'Qwen 3 14B' if args.qwen_14b else 'Qwen 3 32B' if args.qwen_32b else 'Qwen 3 235B'
+        print(f"Model: {qwen_label}")
+        print(f"Prompt levels: {config.QWEN_PROMPT_LEVELS}")
+        print(f"Thinking levels (token budgets): {config.QWEN_THINKING_LEVELS}")
+        print(f"Runs: {config.QWEN_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -1954,7 +3270,7 @@ def run_sync(args):
             print("=" * 60)
             ethics_results = run_claude_opus_ethics_experiment(args.sample_size, args.confidence)
             if ethics_results is not None:
-                ethics_results.to_csv("results/processed/claude_opus_ethics_results.csv", index=False)
+                ethics_results.to_csv(_cp_path("results/processed/claude_opus_ethics_results.csv"), index=False)
                 print(f"\nClaude Opus ETHICS complete: {len(ethics_results)} observations")
 
         if args.moralchoice:
@@ -1963,7 +3279,7 @@ def run_sync(args):
             print("=" * 60)
             mc_results = run_claude_opus_moralchoice_experiment(args.sample_size, args.confidence)
             if mc_results is not None:
-                mc_results.to_csv("results/processed/claude_opus_moralchoice_results.csv", index=False)
+                mc_results.to_csv(_cp_path("results/processed/claude_opus_moralchoice_results.csv"), index=False)
                 print(f"\nClaude Opus MoralChoice complete: {len(mc_results)} observations")
 
         if args.morables:
@@ -1972,10 +3288,23 @@ def run_sync(args):
             print("=" * 60)
             morables_results = run_claude_opus_morables_experiment(args.sample_size, args.confidence)
             if morables_results is not None:
-                morables_results.to_csv("results/processed/claude_opus_morables_results.csv", index=False)
+                morables_results.to_csv(_cp_path("results/processed/claude_opus_morables_results.csv"), index=False)
                 print(f"\nClaude Opus MORABLES complete: {len(morables_results)} observations")
 
                 valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print("RUNNING CLAUDE OPUS MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_results = run_claude_opus_musr_experiment(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv("results/processed/claude_opus_musr_results.csv", index=False)
+                print(f"\nClaude Opus MuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
@@ -1987,7 +3316,7 @@ def run_sync(args):
             print("=" * 60)
             ethics_results = run_gemini_ethics_experiment(args.sample_size, args.confidence)
             if ethics_results is not None:
-                ethics_results.to_csv("results/processed/gemini_ethics_results.csv", index=False)
+                ethics_results.to_csv(_cp_path("results/processed/gemini_ethics_results.csv"), index=False)
                 print(f"\nGemini ETHICS complete: {len(ethics_results)} observations")
 
         if args.moralchoice:
@@ -1996,7 +3325,7 @@ def run_sync(args):
             print("=" * 60)
             mc_results = run_gemini_moralchoice_experiment(args.sample_size, args.confidence)
             if mc_results is not None:
-                mc_results.to_csv("results/processed/gemini_moralchoice_results.csv", index=False)
+                mc_results.to_csv(_cp_path("results/processed/gemini_moralchoice_results.csv"), index=False)
                 print(f"\nGemini MoralChoice complete: {len(mc_results)} observations")
 
         if args.morables:
@@ -2005,10 +3334,23 @@ def run_sync(args):
             print("=" * 60)
             morables_results = run_gemini_morables_experiment(args.sample_size, args.confidence)
             if morables_results is not None:
-                morables_results.to_csv("results/processed/gemini_morables_results.csv", index=False)
+                morables_results.to_csv(_cp_path("results/processed/gemini_morables_results.csv"), index=False)
                 print(f"\nGemini MORABLES complete: {len(morables_results)} observations")
 
                 valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print("RUNNING GEMINI MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_results = run_gemini_musr_experiment(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv("results/processed/gemini_musr_results.csv", index=False)
+                print(f"\nGemini MuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
@@ -2020,7 +3362,7 @@ def run_sync(args):
             print("=" * 60)
             ethics_results = run_gemini_pro_ethics_experiment(args.sample_size, args.confidence)
             if ethics_results is not None:
-                ethics_results.to_csv("results/processed/gemini_pro_ethics_results.csv", index=False)
+                ethics_results.to_csv(_cp_path("results/processed/gemini_pro_ethics_results.csv"), index=False)
                 print(f"\nGemini Pro ETHICS complete: {len(ethics_results)} observations")
 
         if args.moralchoice:
@@ -2029,7 +3371,7 @@ def run_sync(args):
             print("=" * 60)
             mc_results = run_gemini_pro_moralchoice_experiment(args.sample_size, args.confidence)
             if mc_results is not None:
-                mc_results.to_csv("results/processed/gemini_pro_moralchoice_results.csv", index=False)
+                mc_results.to_csv(_cp_path("results/processed/gemini_pro_moralchoice_results.csv"), index=False)
                 print(f"\nGemini Pro MoralChoice complete: {len(mc_results)} observations")
 
         if args.morables:
@@ -2038,10 +3380,23 @@ def run_sync(args):
             print("=" * 60)
             morables_results = run_gemini_pro_morables_experiment(args.sample_size, args.confidence)
             if morables_results is not None:
-                morables_results.to_csv("results/processed/gemini_pro_morables_results.csv", index=False)
+                morables_results.to_csv(_cp_path("results/processed/gemini_pro_morables_results.csv"), index=False)
                 print(f"\nGemini Pro MORABLES complete: {len(morables_results)} observations")
 
                 valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print("RUNNING GEMINI PRO MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_results = run_gemini_pro_musr_experiment(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv("results/processed/gemini_pro_musr_results.csv", index=False)
+                print(f"\nGemini Pro MuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
@@ -2053,7 +3408,7 @@ def run_sync(args):
             print("=" * 60)
             ethics_results = run_gpt_ethics_experiment(args.sample_size, args.confidence)
             if ethics_results is not None:
-                ethics_results.to_csv("results/processed/gpt_ethics_results.csv", index=False)
+                ethics_results.to_csv(_cp_path("results/processed/gpt_ethics_results.csv"), index=False)
                 print(f"\nGPT ETHICS complete: {len(ethics_results)} observations")
 
         if args.moralchoice:
@@ -2062,7 +3417,7 @@ def run_sync(args):
             print("=" * 60)
             mc_results = run_gpt_moralchoice_experiment(args.sample_size, args.confidence)
             if mc_results is not None:
-                mc_results.to_csv("results/processed/gpt_moralchoice_results.csv", index=False)
+                mc_results.to_csv(_cp_path("results/processed/gpt_moralchoice_results.csv"), index=False)
                 print(f"\nGPT MoralChoice complete: {len(mc_results)} observations")
 
         if args.morables:
@@ -2071,10 +3426,92 @@ def run_sync(args):
             print("=" * 60)
             morables_results = run_gpt_morables_experiment(args.sample_size, args.confidence)
             if morables_results is not None:
-                morables_results.to_csv("results/processed/gpt_morables_results.csv", index=False)
+                morables_results.to_csv(_cp_path("results/processed/gpt_morables_results.csv"), index=False)
                 print(f"\nGPT MORABLES complete: {len(morables_results)} observations")
 
                 valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print("RUNNING GPT MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_results = run_gpt_musr_experiment(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv("results/processed/gpt_musr_results.csv", index=False)
+                print(f"\nGPT MuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+    elif args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
+        # Run Qwen experiments — determine which size
+        if args.qwen_4b:
+            size_key, qwen_label = 'qwen_4b', 'Qwen 3 4B'
+        elif args.qwen_14b:
+            size_key, qwen_label = 'qwen_14b', 'Qwen 3 14B'
+        elif args.qwen_32b:
+            size_key, qwen_label = 'qwen_32b', 'Qwen 3 32B'
+        else:
+            size_key, qwen_label = 'qwen_235b', 'Qwen 3 235B'
+
+        sync_runners = {
+            'qwen_4b': (run_qwen_4b_ethics_experiment, run_qwen_4b_moralchoice_experiment, run_qwen_4b_morables_experiment),
+            'qwen_14b': (run_qwen_14b_ethics_experiment, run_qwen_14b_moralchoice_experiment, run_qwen_14b_morables_experiment),
+            'qwen_32b': (run_qwen_32b_ethics_experiment, run_qwen_32b_moralchoice_experiment, run_qwen_32b_morables_experiment),
+            'qwen_235b': (run_qwen_235b_ethics_experiment, run_qwen_235b_moralchoice_experiment, run_qwen_235b_morables_experiment),
+        }
+        ethics_fn, mc_fn, morables_fn = sync_runners[size_key]
+
+        if args.ethics:
+            print("\n" + "=" * 60)
+            print(f"RUNNING {qwen_label.upper()} ETHICS EXPERIMENT")
+            print("=" * 60)
+            ethics_results = ethics_fn(args.sample_size, args.confidence)
+            if ethics_results is not None:
+                ethics_results.to_csv(_cp_path(f"results/processed/{size_key}_ethics_results.csv"), index=False)
+                print(f"\n{qwen_label} ETHICS complete: {len(ethics_results)} observations")
+
+        if args.moralchoice:
+            print("\n" + "=" * 60)
+            print(f"RUNNING {qwen_label.upper()} MORALCHOICE EXPERIMENT")
+            print("=" * 60)
+            mc_results = mc_fn(args.sample_size, args.confidence)
+            if mc_results is not None:
+                mc_results.to_csv(_cp_path(f"results/processed/{size_key}_moralchoice_results.csv"), index=False)
+                print(f"\n{qwen_label} MoralChoice complete: {len(mc_results)} observations")
+
+        if args.morables:
+            print("\n" + "=" * 60)
+            print(f"RUNNING {qwen_label.upper()} MORABLES EXPERIMENT")
+            print("=" * 60)
+            morables_results = morables_fn(args.sample_size, args.confidence)
+            if morables_results is not None:
+                morables_results.to_csv(_cp_path(f"results/processed/{size_key}_morables_results.csv"), index=False)
+                print(f"\n{qwen_label} MORABLES complete: {len(morables_results)} observations")
+
+                valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print(f"RUNNING {qwen_label.upper()} MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_fn = {
+                'qwen_4b': run_qwen_4b_musr_experiment,
+                'qwen_14b': run_qwen_14b_musr_experiment,
+                'qwen_32b': run_qwen_32b_musr_experiment,
+                'qwen_235b': run_qwen_235b_musr_experiment,
+            }[size_key]
+            musr_results = musr_fn(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv(f"results/processed/{size_key}_musr_results.csv", index=False)
+                print(f"\n{qwen_label} MuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
@@ -2085,7 +3522,7 @@ def run_sync(args):
             print("RUNNING ETHICS EXPERIMENT")
             print("=" * 60)
             ethics_results = run_ethics_experiment(args.sample_size, args.confidence)
-            ethics_results.to_csv("results/processed/ethics_results.csv", index=False)
+            ethics_results.to_csv(_cp_path("results/processed/ethics_results.csv"), index=False)
             print(f"\nETHICS complete: {len(ethics_results)} observations")
 
         if args.moralchoice:
@@ -2093,7 +3530,7 @@ def run_sync(args):
             print("RUNNING MORALCHOICE EXPERIMENT")
             print("=" * 60)
             mc_results = run_moralchoice_experiment(args.sample_size, args.confidence)
-            mc_results.to_csv("results/processed/moralchoice_results.csv", index=False)
+            mc_results.to_csv(_cp_path("results/processed/moralchoice_results.csv"), index=False)
             print(f"\nMoralChoice complete: {len(mc_results)} observations")
 
         if args.morables:
@@ -2102,10 +3539,23 @@ def run_sync(args):
             print("=" * 60)
             morables_results = run_morables_experiment(args.sample_size, args.confidence)
             if morables_results is not None:
-                morables_results.to_csv("results/processed/morables_results.csv", index=False)
+                morables_results.to_csv(_cp_path("results/processed/morables_results.csv"), index=False)
                 print(f"\nMORABLES complete: {len(morables_results)} observations")
 
                 valid_results = morables_results[morables_results['correct'].notna()]
+                if len(valid_results) > 0:
+                    print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
+
+        if args.musr:
+            print("\n" + "=" * 60)
+            print("RUNNING MUSR EXPERIMENT")
+            print("=" * 60)
+            musr_results = run_musr_experiment(args.sample_size, args.confidence)
+            if musr_results is not None:
+                musr_results.to_csv("results/processed/musr_results.csv", index=False)
+                print(f"\nMuSR complete: {len(musr_results)} observations")
+
+                valid_results = musr_results[musr_results['correct'].notna()]
                 if len(valid_results) > 0:
                     print(f"  Overall accuracy: {valid_results['correct'].mean():.3f}")
 
@@ -2120,12 +3570,16 @@ def run_sync(args):
 
 async def run_async(args):
     """Run experiments asynchronously (parallel datasets)."""
+    global _BUT_WAIT
+    _BUT_WAIT = getattr(args, 'but_wait', False)
     start_time = datetime.now()
 
     print("=" * 60)
     print("STARTING EXPERIMENT (Async Mode - Parallel Datasets)")
     print("=" * 60)
     print(f"Start time: {start_time}")
+    if _BUT_WAIT:
+        print(f"But-wait continuation: ENABLED")
     if args.claude_opus:
         print(f"Model: Claude Opus 4.5")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -2146,6 +3600,12 @@ async def run_async(args):
         print(f"Prompt levels: {config.GPT_PROMPT_LEVELS}")
         print(f"Thinking levels: {config.GPT_THINKING_LEVELS}")
         print(f"Runs: {config.GPT_N_RUNS}")
+    elif args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
+        qwen_label = 'Qwen 3 4B' if args.qwen_4b else 'Qwen 3 14B' if args.qwen_14b else 'Qwen 3 32B' if args.qwen_32b else 'Qwen 3 235B'
+        print(f"Model: {qwen_label}")
+        print(f"Prompt levels: {config.QWEN_PROMPT_LEVELS}")
+        print(f"Thinking levels (token budgets): {config.QWEN_THINKING_LEVELS}")
+        print(f"Runs: {config.QWEN_N_RUNS}")
     else:
         print(f"Model: {config.MODEL}")
         print(f"Thinking conditions: {THINKING_CONDITIONS}")
@@ -2162,7 +3622,7 @@ async def run_async(args):
 
     # Reset rate limiter (unless resuming, to preserve stats)
     if not args.resume:
-        if args.gemini or args.gemini_pro or args.gpt:
+        if args.gemini or args.gemini_pro or args.gpt or args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
             reset_gemini_rate_limiter()
         else:
             reset_rate_limiter()
@@ -2187,6 +3647,9 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_claude_opus_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('claude_opus_morables')
+        if args.musr:
+            tasks.append(run_claude_opus_musr_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('claude_opus_musr')
     elif args.gemini:
         # Gemini Flash experiments
         if args.ethics:
@@ -2198,6 +3661,9 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_gemini_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('gemini_morables')
+        if args.musr:
+            tasks.append(run_gemini_musr_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gemini_musr')
     elif args.gemini_pro:
         # Gemini Pro experiments
         if args.ethics:
@@ -2209,6 +3675,9 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_gemini_pro_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('gemini_pro_morables')
+        if args.musr:
+            tasks.append(run_gemini_pro_musr_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gemini_pro_musr')
     elif args.gpt:
         # GPT experiments
         if args.ethics:
@@ -2220,6 +3689,46 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_gpt_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('gpt_morables')
+        if args.musr:
+            tasks.append(run_gpt_musr_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('gpt_musr')
+    elif args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
+        # Qwen experiments — determine size key
+        if args.qwen_4b:
+            size_key = 'qwen_4b'
+        elif args.qwen_14b:
+            size_key = 'qwen_14b'
+        elif args.qwen_32b:
+            size_key = 'qwen_32b'
+        else:
+            size_key = 'qwen_235b'
+
+        async_runners = {
+            'qwen_4b': (run_qwen_4b_ethics_experiment_async, run_qwen_4b_moralchoice_experiment_async, run_qwen_4b_morables_experiment_async),
+            'qwen_14b': (run_qwen_14b_ethics_experiment_async, run_qwen_14b_moralchoice_experiment_async, run_qwen_14b_morables_experiment_async),
+            'qwen_32b': (run_qwen_32b_ethics_experiment_async, run_qwen_32b_moralchoice_experiment_async, run_qwen_32b_morables_experiment_async),
+            'qwen_235b': (run_qwen_235b_ethics_experiment_async, run_qwen_235b_moralchoice_experiment_async, run_qwen_235b_morables_experiment_async),
+        }
+        ethics_fn, mc_fn, morables_fn = async_runners[size_key]
+
+        if args.ethics:
+            tasks.append(ethics_fn(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append(f'{size_key}_ethics')
+        if args.moralchoice:
+            tasks.append(mc_fn(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append(f'{size_key}_moralchoice')
+        if args.morables:
+            tasks.append(morables_fn(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append(f'{size_key}_morables')
+        if args.musr:
+            musr_fn = {
+                'qwen_4b': run_qwen_4b_musr_experiment_async,
+                'qwen_14b': run_qwen_14b_musr_experiment_async,
+                'qwen_32b': run_qwen_32b_musr_experiment_async,
+                'qwen_235b': run_qwen_235b_musr_experiment_async,
+            }[size_key]
+            tasks.append(musr_fn(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append(f'{size_key}_musr')
     else:
         # Claude experiments
         if args.ethics:
@@ -2231,6 +3740,9 @@ async def run_async(args):
         if args.morables:
             tasks.append(run_morables_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
             task_names.append('morables')
+        if args.musr:
+            tasks.append(run_musr_experiment_async(results_queue, args.sample_size, args.confidence, args.resume))
+            task_names.append('musr')
 
     if args.claude_opus:
         model_name = "Claude Opus 4.5"
@@ -2240,6 +3752,14 @@ async def run_async(args):
         model_name = "Gemini 3 Pro"
     elif args.gpt:
         model_name = "GPT 5.2"
+    elif args.qwen_4b:
+        model_name = "Qwen 3 4B"
+    elif args.qwen_14b:
+        model_name = "Qwen 3 14B"
+    elif args.qwen_32b:
+        model_name = "Qwen 3 32B"
+    elif args.qwen_235b:
+        model_name = "Qwen 3 235B"
     else:
         model_name = "Claude"
     print(f"Running {len(tasks)} {model_name} benchmark(s) in parallel...")
@@ -2268,6 +3788,18 @@ async def run_async(args):
     elif args.gpt:
         prefix = "gpt_"
         model_label = "GPT "
+    elif args.qwen_4b:
+        prefix = "qwen_4b_"
+        model_label = "Qwen 3 4B "
+    elif args.qwen_14b:
+        prefix = "qwen_14b_"
+        model_label = "Qwen 3 14B "
+    elif args.qwen_32b:
+        prefix = "qwen_32b_"
+        model_label = "Qwen 3 32B "
+    elif args.qwen_235b:
+        prefix = "qwen_235b_"
+        model_label = "Qwen 3 235B "
     else:
         prefix = ""
         model_label = ""
@@ -2279,8 +3811,8 @@ async def run_async(args):
             task_results = results[i]
             if task_results:
                 # Strip model prefix from task_name for output filename
-                bm_name = task_name.replace('claude_opus_', '').replace('gemini_pro_', '').replace('gemini_', '').replace('gpt_', '')
-                output_file = f"results/processed/{prefix}{bm_name}_results.csv"
+                bm_name = task_name.replace('claude_opus_', '').replace('gemini_pro_', '').replace('gemini_', '').replace('gpt_', '').replace('qwen_4b_', '').replace('qwen_14b_', '').replace('qwen_32b_', '').replace('qwen_235b_', '')
+                output_file = _cp_path(f"results/processed/{prefix}{bm_name}_results.csv")
                 pd.DataFrame(task_results).to_csv(output_file, index=False)
                 print(f"{model_label}{task_name.upper()}: Saved {len(task_results)} results")
 
@@ -2293,7 +3825,7 @@ async def run_async(args):
 
     end_time = datetime.now()
     duration = end_time - start_time
-    if args.gemini or args.gemini_pro or args.gpt:
+    if args.gemini or args.gemini_pro or args.gpt or args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b:
         stats = get_gemini_rate_stats()
     else:
         stats = get_rate_stats()
@@ -2310,6 +3842,14 @@ async def run_async(args):
         print(f"Model: Gemini 3 Pro")
     elif args.gemini:
         print(f"Model: Gemini 3 Flash")
+    elif args.qwen_4b:
+        print(f"Model: Qwen 3 4B")
+    elif args.qwen_14b:
+        print(f"Model: Qwen 3 14B")
+    elif args.qwen_32b:
+        print(f"Model: Qwen 3 32B")
+    elif args.qwen_235b:
+        print(f"Model: Qwen 3 235B")
     else:
         print(f"Model: {config.MODEL}")
     print(f"Duration: {duration}")
@@ -2329,15 +3869,19 @@ Examples:
   python run_experiment.py --gemini               # Gemini 3 Flash
   python run_experiment.py --gemini-pro           # Gemini 3 Pro
   python run_experiment.py --gpt                  # GPT 5.2
+  python run_experiment.py --qwen-4b              # Qwen 3 4B
+  python run_experiment.py --qwen-235b            # Qwen 3 235B
   python run_experiment.py --claude-opus --async  # Claude Opus experiments (async)
   python run_experiment.py --ethics               # Run only ETHICS
   python run_experiment.py --sample 50            # Use 50 items per benchmark
   python run_experiment.py --async --resume       # Resume from checkpoints
+  python run_experiment.py --gemini --ethics --but-wait  # But-wait continuation
 
 Model Experiments:
   Claude Haiku/Opus: Thinking: on/off (extended thinking)
   Gemini Flash/Pro:  Thinking levels: minimal, low, medium, high
   GPT:               Reasoning levels: none, low, medium, high, xhigh
+  Qwen 3 (4B-235B): Reasoning token budgets: 1k, 2k, 4k, 8k, 16k, 32k
   All models vary both prompt_level and thinking/reasoning level.
         """
     )
@@ -2350,6 +3894,8 @@ Model Experiments:
                         help='Disable confidence scoring')
     parser.add_argument('--resume', action='store_true',
                         help='Resume from existing checkpoints (async mode only)')
+    parser.add_argument('--but-wait', dest='but_wait', action='store_true',
+                        help='Enable but-wait continuation technique (orthogonal to model/prompt)')
 
     # Model selection
     model_group = parser.add_mutually_exclusive_group()
@@ -2361,19 +3907,29 @@ Model Experiments:
                         help='Use Gemini 3 Pro via OpenRouter, varying thinking_level')
     model_group.add_argument('--gpt', action='store_true',
                         help='Use GPT 5.2 via OpenRouter, varying reasoning effort')
+    model_group.add_argument('--qwen-4b', dest='qwen_4b', action='store_true',
+                        help='Use Qwen 3 4B via OpenRouter, varying reasoning token budget')
+    model_group.add_argument('--qwen-14b', dest='qwen_14b', action='store_true',
+                        help='Use Qwen 3 14B via OpenRouter, varying reasoning token budget')
+    model_group.add_argument('--qwen-32b', dest='qwen_32b', action='store_true',
+                        help='Use Qwen 3 32B via OpenRouter, varying reasoning token budget')
+    model_group.add_argument('--qwen-235b', dest='qwen_235b', action='store_true',
+                        help='Use Qwen 3 235B via OpenRouter, varying reasoning token budget')
 
     # Benchmark selection
     parser.add_argument('--ethics', action='store_true', help='Run ETHICS benchmark')
     parser.add_argument('--moralchoice', action='store_true', help='Run MoralChoice benchmark')
     parser.add_argument('--morables', action='store_true', help='Run MORABLES benchmark')
+    parser.add_argument('--musr', action='store_true', help='Run MuSR benchmark')
 
     args = parser.parse_args()
 
     # If no benchmarks specified, run all
-    if not (args.ethics or args.moralchoice or args.morables):
+    if not (args.ethics or args.moralchoice or args.morables or args.musr):
         args.ethics = True
         args.moralchoice = True
         args.morables = True
+        args.musr = True
 
     # Check model availability if requested
     if args.claude_opus and not config.ANTHROPIC_API_KEY:
@@ -2389,6 +3945,12 @@ Model Experiments:
 
     if args.gpt and not is_gpt_available():
         print("ERROR: GPT via OpenRouter not available.")
+        print("  1. Ensure openai package is installed (already in requirements.txt)")
+        print("  2. Set OPENROUTER_API_KEY in your .env file")
+        return
+
+    if (args.qwen_4b or args.qwen_14b or args.qwen_32b or args.qwen_235b) and not is_qwen_available():
+        print("ERROR: Qwen via OpenRouter not available.")
         print("  1. Ensure openai package is installed (already in requirements.txt)")
         print("  2. Set OPENROUTER_API_KEY in your .env file")
         return

@@ -244,6 +244,112 @@ def validate_morables_data(df: pd.DataFrame) -> bool:
         return True
 
 
+def load_musr_data():
+    """Load MuSR murder mysteries dataset from HuggingFace."""
+
+    print("Loading MuSR dataset from HuggingFace...")
+    print("  Source: TAUR-Lab/MuSR (murder_mysteries)")
+
+    dataset = load_dataset("TAUR-Lab/MuSR", "murder_mysteries")
+
+    # Use first available split
+    split_name = list(dataset.keys())[0]
+    data = dataset[split_name]
+    if split_name != 'train':
+        print(f"  Using split: {split_name}")
+
+    df = pd.DataFrame(data)
+
+    print(f"  Loaded {len(df)} items")
+    print(f"  Columns: {list(df.columns)}")
+
+    return df
+
+
+def prepare_musr_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare MuSR data for experiment.
+
+    Maps choices list to option_a/option_b and standardizes answer fields.
+    """
+    print("\nPreparing MuSR data...")
+
+    # Map choices list to option_a, option_b
+    if 'choices' in df.columns:
+        df['option_a'] = df['choices'].apply(lambda x: x[0] if len(x) > 0 else '')
+        df['option_b'] = df['choices'].apply(lambda x: x[1] if len(x) > 1 else '')
+
+    # Standardize answer index
+    if 'answer_index' in df.columns:
+        df['correct_idx'] = df['answer_index'].astype(int)
+    elif 'answer' in df.columns:
+        df['correct_idx'] = df['answer'].astype(int)
+
+    # Derive correct_answer letter
+    df['correct_answer'] = df['correct_idx'].map({0: 'A', 1: 'B'})
+
+    # Add item IDs
+    df['item_id'] = [f"musr_{i}" for i in range(len(df))]
+
+    # Select columns
+    required_cols = ['item_id', 'narrative', 'question', 'option_a', 'option_b',
+                     'correct_idx', 'correct_answer']
+
+    # Add optional columns if they exist
+    for col in ['answer_choice']:
+        if col in df.columns:
+            required_cols.append(col)
+
+    available_cols = [col for col in required_cols if col in df.columns]
+    df = df[available_cols]
+
+    print(f"  Final columns: {df.columns.tolist()}")
+    print(f"  Total items: {len(df)}")
+
+    return df
+
+
+def validate_musr_data(df: pd.DataFrame) -> bool:
+    """Validate the prepared MuSR dataset."""
+
+    print("\nValidating MuSR data...")
+
+    issues = []
+
+    # Check required columns
+    required = ['item_id', 'narrative', 'question', 'option_a', 'option_b', 'correct_idx']
+    missing = [col for col in required if col not in df.columns]
+    if missing:
+        issues.append(f"Missing columns: {missing}")
+
+    # Check for empty narratives
+    empty_narratives = df['narrative'].isna().sum() + (df['narrative'] == '').sum()
+    if empty_narratives > 0:
+        issues.append(f"Empty narratives: {empty_narratives}")
+
+    # Check correct_idx range (0 or 1 for binary)
+    if 'correct_idx' in df.columns:
+        invalid_idx = ((df['correct_idx'] < 0) | (df['correct_idx'] > 1)).sum()
+        if invalid_idx > 0:
+            issues.append(f"Invalid correct_idx values: {invalid_idx}")
+
+    # Check for empty options
+    for opt in ['option_a', 'option_b']:
+        if opt in df.columns:
+            empty = df[opt].isna().sum() + (df[opt] == '').sum()
+            if empty > 0:
+                issues.append(f"Empty {opt}: {empty}")
+
+    if issues:
+        print("  ISSUES FOUND:")
+        for issue in issues:
+            print(f"    - {issue}")
+        return False
+    else:
+        print("  All validations passed!")
+        return True
+
+
 def main():
     """Prepare and save experimental datasets."""
 
@@ -306,6 +412,36 @@ def main():
     print(f"  E) {sample_item['option_e'][:80]}...")
     print(f"Correct: {['A', 'B', 'C', 'D', 'E'][sample_item['correct_idx']]}")
 
+    # Load and prepare MuSR
+    print("\n--- MuSR (Murder Mysteries) Benchmark ---")
+    Path("data/musr").mkdir(parents=True, exist_ok=True)
+
+    musr_raw = load_musr_data()
+    musr = prepare_musr_data(musr_raw)
+    musr_valid = validate_musr_data(musr)
+
+    if not musr_valid:
+        print("\nWARNING: MuSR data validation failed. Check dataset structure.")
+
+    # Save full dataset
+    musr.to_csv("data/musr/musr_full.csv", index=False)
+    print(f"Saved full dataset to: data/musr/musr_full.csv")
+
+    # Create a sample for pilot testing
+    musr_sample_size = min(100, len(musr))
+    musr_sample = musr.sample(n=musr_sample_size, random_state=config.RANDOM_SEED)
+    musr_sample.to_csv("data/musr/musr_sample.csv", index=False)
+    print(f"Saved sample ({musr_sample_size} items) to: data/musr/musr_sample.csv")
+
+    # Show sample item
+    print("\n--- Sample MuSR Item ---")
+    sample_musr = musr.iloc[0]
+    print(f"Narrative: {sample_musr['narrative'][:200]}...")
+    print(f"Question: {sample_musr['question']}")
+    print(f"  A) {sample_musr['option_a']}")
+    print(f"  B) {sample_musr['option_b']}")
+    print(f"Correct: {sample_musr['correct_answer']}")
+
     print("\n" + "=" * 50)
     print("DATA PREPARATION COMPLETE")
     print("=" * 50)
@@ -313,6 +449,8 @@ def main():
     print(f"  MoralChoice: data/moralchoice_sample.csv ({len(mc)} items)")
     print(f"  MORABLES: data/morables/morables_full.csv ({len(morables)} items)")
     print(f"  MORABLES sample: data/morables/morables_sample.csv ({sample_size} items)")
+    print(f"  MuSR: data/musr/musr_full.csv ({len(musr)} items)")
+    print(f"  MuSR sample: data/musr/musr_sample.csv ({musr_sample_size} items)")
 
 
 if __name__ == "__main__":

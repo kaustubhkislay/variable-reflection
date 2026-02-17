@@ -175,7 +175,8 @@ def call_gemini(
     max_retries: int = 3,
     retry_delay: float = 5.0,
     max_tokens: int = None,
-    model: str = None
+    model: str = None,
+    messages: list = None
 ) -> GeminiResponse:
     """
     Call Gemini API via OpenRouter with thinking level control (synchronous).
@@ -194,13 +195,17 @@ def call_gemini(
     client = _get_sync_client()
     max_tokens = max_tokens or config.GEMINI_MAX_TOKENS
     model = model or config.GEMINI_MODEL
-    messages, extra_body = _build_messages_and_params(prompt, thinking_level, max_tokens)
+    if messages is not None:
+        api_messages = messages
+    else:
+        api_messages, _ = _build_messages_and_params(prompt, thinking_level, max_tokens)
+    _, extra_body = _build_messages_and_params(prompt, thinking_level, max_tokens)
 
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=api_messages,
                 max_tokens=max_tokens,
                 extra_body=extra_body
             )
@@ -230,7 +235,8 @@ async def call_gemini_async(
     max_retries: int = 3,
     retry_delay: float = 5.0,
     max_tokens: int = None,
-    model: str = None
+    model: str = None,
+    messages: list = None
 ) -> GeminiResponse:
     """
     Call Gemini API via OpenRouter with thinking level control (asynchronous).
@@ -249,13 +255,17 @@ async def call_gemini_async(
     client = _get_async_client()
     max_tokens = max_tokens or config.GEMINI_MAX_TOKENS
     model = model or config.GEMINI_MODEL
-    messages, extra_body = _build_messages_and_params(prompt, thinking_level, max_tokens)
+    if messages is not None:
+        api_messages = messages
+    else:
+        api_messages, _ = _build_messages_and_params(prompt, thinking_level, max_tokens)
+    _, extra_body = _build_messages_and_params(prompt, thinking_level, max_tokens)
 
     for attempt in range(max_retries):
         try:
             response = await client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=api_messages,
                 max_tokens=max_tokens,
                 extra_body=extra_body
             )
@@ -283,23 +293,25 @@ def call_gemini_with_rate_limit(
     prompt: str,
     thinking_level: str = "low",
     max_tokens: int = None,
-    model: str = None
+    model: str = None,
+    messages: list = None
 ) -> GeminiResponse:
     """Call Gemini API via OpenRouter with rate limiting (synchronous)."""
     time.sleep(60 / config.CALLS_PER_MINUTE)
-    return call_gemini(prompt, thinking_level, max_tokens=max_tokens, model=model)
+    return call_gemini(prompt, thinking_level, max_tokens=max_tokens, model=model, messages=messages)
 
 
 async def call_gemini_with_rate_limit_async(
     prompt: str,
     thinking_level: str = "low",
     max_tokens: int = None,
-    model: str = None
+    model: str = None,
+    messages: list = None
 ) -> GeminiResponse:
     """Call Gemini API via OpenRouter with rate limiting (asynchronous)."""
     rate_limiter = _get_rate_limiter()
     await rate_limiter.acquire()
-    return await call_gemini_async(prompt, thinking_level, max_tokens=max_tokens, model=model)
+    return await call_gemini_async(prompt, thinking_level, max_tokens=max_tokens, model=model, messages=messages)
 
 
 def reset_gemini_rate_limiter():

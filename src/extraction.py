@@ -269,6 +269,37 @@ def extract_morables_with_confidence(response: str) -> dict:
     }
 
 
+def extract_musr_answer(response: str) -> Optional[str]:
+    """
+    Extract A/B from MuSR response. Same logic as MoralChoice.
+
+    Returns:
+        "A", "B", or None if extraction failed
+    """
+    return extract_moralchoice_answer(response)
+
+
+def extract_musr_with_confidence(response: str) -> dict:
+    """
+    Extract both answer (A/B) and confidence (0-100) from MuSR response.
+
+    Returns:
+        Dictionary with:
+        - 'answer': "A", "B", or None
+        - 'confidence': 0-100 integer, or None
+        - 'confidence_category': "very_low", "low", "moderate", "high", "very_high", or None
+    """
+    answer = extract_musr_answer(response)
+    confidence = extract_confidence_score(response)
+    category = categorize_confidence(confidence)
+
+    return {
+        'answer': answer,
+        'confidence': confidence,
+        'confidence_category': category
+    }
+
+
 def extract_confidence_score(response: str) -> Optional[int]:
     """
     Extract confidence score (0-100) from MoralChoice confidence response.
@@ -418,6 +449,8 @@ def extract_with_confidence(response: str, benchmark: str) -> dict:
         return extract_moralchoice_with_confidence(response)
     elif benchmark == "morables":
         return extract_morables_with_confidence(response)
+    elif benchmark == "musr":
+        return extract_musr_with_confidence(response)
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")
 
@@ -439,5 +472,7 @@ def extract_answer(response: str, benchmark: str) -> Optional[str]:
         return extract_moralchoice_answer(response)
     elif benchmark == "morables":
         return extract_morables_answer(response)
+    elif benchmark == "musr":
+        return extract_musr_answer(response)
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")

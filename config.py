@@ -33,6 +33,17 @@ GPT_PROMPT_LEVELS = [0, 2, 4, 5]  # All prompting styles
 GPT_MAX_TOKENS = 4000
 GPT_N_RUNS = 1  # Number of runs for GPT experiments
 
+# Qwen Experiment Parameters
+# Qwen experiments vary both prompt level and reasoning token budget
+QWEN_4B_MODEL = "qwen/qwen3-4b"      # OpenRouter model ID
+QWEN_14B_MODEL = "qwen/qwen3-14b"    # OpenRouter model ID
+QWEN_32B_MODEL = "qwen/qwen3-32b"    # OpenRouter model ID
+QWEN_235B_MODEL = "qwen/qwen3-235b"  # OpenRouter model ID
+QWEN_THINKING_LEVELS = [1024, 2048, 4096, 8192, 16384, 32768]  # Reasoning token budgets
+QWEN_PROMPT_LEVELS = [0, 2, 4, 5]  # All prompting styles
+QWEN_MAX_TOKENS = 4000
+QWEN_N_RUNS = 1  # Number of runs for Qwen experiments
+
 # Paths
 DATA_DIR = "data"
 RESULTS_DIR = "results"
@@ -47,6 +58,10 @@ RANDOM_SEED = 67
 JUDGE_THINKING_LEVEL = "minimal"  # Fast structured output
 JUDGE_MAX_TOKENS = 500  # Structured response is compact
 JUDGE_MIN_TRACE_WORDS = 20  # Minimum words to consider judgeable
+
+# But-Wait Continuation Technique
+BUT_WAIT_SUFFIX = "\n\nbut wait: "
+BUT_WAIT_MIN_BUDGET = 100  # Stop when remaining tokens < this
 
 # Rate Limiting
 CALLS_PER_MINUTE = 50  # Adjust based on your API tier
