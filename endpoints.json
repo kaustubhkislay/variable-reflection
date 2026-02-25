@@ -1,0 +1,22 @@
+{
+  "qwen3-32b": {
+    "endpoint_id": "akbaeeylr9o09e",
+    "model_name": "qwen/qwen3-32b",
+    "description": "Qwen3 32B on RunPod vLLM"
+  },
+  "qwen3-14b": {
+    "endpoint_id": "e5c0xy2ypjigap",
+    "model_name": "qwen/qwen3-14b",
+    "description": "Qwen3 14B on RunPod vLLM"
+  },
+  "qwen3-8b": {
+    "endpoint_id": "ng5q976gy1gfqs",
+    "model_name": "qwen/qwen3-8b",
+    "description": "Qwen3 8B on RunPod vLLM"
+  },
+  "qwen3-4b": {
+    "endpoint_id": "sctg69kcmp61w9",
+    "model_name": "qwen/qwen3-4b",
+    "description": "Qwen3 4B on RunPod vLLM"
+  }
+}
