@@ -1,0 +1,120 @@
+[
+  {
+    "label": "no_prefill",
+    "description": "Baseline - no assistant prefill, fresh generation",
+    "prefill_text": null,
+    "error": "peer closed connection without sending complete message body (incomplete chunked read)"
+  },
+  {
+    "label": "cheeky_think",
+    "description": "Open <think> block seeds a hidden thought; model closes it then generates a response",
+    "prefill_text": "<think> I really hate this guy omg, let's say hi and be cheeky.",
+    "prompt": "Hello there!",
+    "model": "qwen/qwen3-8b",
+    "temperature": 0.7,
+    "seed": null,
+    "generated_text": "",
+    "full_content_with_prefill": "<think> I really hate this guy omg, let's say hi and be cheeky.",
+    "thinking_content": "",
+    "response_content": "<think> I really hate this guy omg, let's say hi and be cheeky.",
+    "elapsed_s": 6.117417600005865,
+    "ttft_s": null,
+    "stream_chunks": 0,
+    "usage": {
+      "prompt_tokens": 33,
+      "completion_tokens": 1,
+      "total_tokens": 34
+    },
+    "local_token_counts": {
+      "prompt": 11,
+      "thinking": 0,
+      "response": 18,
+      "total_completion": 18
+    },
+    "timestamp_utc": "2026-02-26T09:05:07.863561+00:00"
+  },
+  {
+    "label": "think_close",
+    "description": "Prefill </think> to skip thinking entirely and jump straight to the answer",
+    "prefill_text": "</think>\n",
+    "prompt": "Hello there!",
+    "model": "qwen/qwen3-8b",
+    "temperature": 0.7,
+    "seed": null,
+    "generated_text": "Hello! How can I assist you today? 😊",
+    "full_content_with_prefill": "</think>\nHello! How can I assist you today? 😊",
+    "thinking_content": "",
+    "response_content": "</think>\nHello! How can I assist you today? 😊",
+    "elapsed_s": 0.8258613999933004,
+    "ttft_s": 0.8243238999275491,
+    "stream_chunks": 4,
+    "usage": {
+      "prompt_tokens": 15,
+      "completion_tokens": 12,
+      "total_tokens": 27
+    },
+    "local_token_counts": {
+      "prompt": 11,
+      "thinking": 0,
+      "response": 13,
+      "total_completion": 13
+    },
+    "timestamp_utc": "2026-02-26T09:05:17.615452+00:00"
+  },
+  {
+    "label": "think_seeded",
+    "description": "Seed the opening line of the think block",
+    "prefill_text": "<think>\nLet me think step by step.\n",
+    "prompt": "Hello there!",
+    "model": "qwen/qwen3-8b",
+    "temperature": 0.7,
+    "seed": null,
+    "generated_text": "Okay, the user said \"Hello there!\" and I need to respond appropriately. Since the user is greeting me, I should acknowledge their greeting and offer assistance. I should keep the tone friendly and open-ended. I can ask how I can help them today. Let me make sure the response is welcoming and not too formal. Also, I should avoid any markdown and keep it natural. Alright, that should work.\n</think>\n\nHello! How can I assist you today? 😊",
+    "full_content_with_prefill": "<think>\nLet me think step by step.\nOkay, the user said \"Hello there!\" and I need to respond appropriately. Since the user is greeting me, I should acknowledge their greeting and offer assistance. I should keep the tone friendly and open-ended. I can ask how I can help them today. Let me make sure the response is welcoming and not too formal. Also, I should avoid any markdown and keep it natural. Alright, that should work.\n</think>\n\nHello! How can I assist you today? 😊",
+    "thinking_content": "Let me think step by step.\nOkay, the user said \"Hello there!\" and I need to respond appropriately. Since the user is greeting me, I should acknowledge their greeting and offer assistance. I should keep the tone friendly and open-ended. I can ask how I can help them today. Let me make sure the response is welcoming and not too formal. Also, I should avoid any markdown and keep it natural. Alright, that should work.",
+    "response_content": "Hello! How can I assist you today? 😊",
+    "elapsed_s": 1.3512464000377804,
+    "ttft_s": 0.9355320000322536,
+    "stream_chunks": 66,
+    "usage": {
+      "prompt_tokens": 24,
+      "completion_tokens": 97,
+      "total_tokens": 121
+    },
+    "local_token_counts": {
+      "prompt": 11,
+      "thinking": 90,
+      "response": 11,
+      "total_completion": 101
+    },
+    "timestamp_utc": "2026-02-26T09:05:18.439759+00:00"
+  },
+  {
+    "label": "answer_steer",
+    "description": "Steer directly toward an answer with no think block",
+    "prefill_text": "The answer is ",
+    "prompt": "Hello there!",
+    "model": "qwen/qwen3-8b",
+    "temperature": 0.7,
+    "seed": null,
+    "generated_text": "10.",
+    "full_content_with_prefill": "The answer is 10.",
+    "thinking_content": "",
+    "response_content": "The answer is 10.",
+    "elapsed_s": 0.7375881000189111,
+    "ttft_s": 0.7364676999859512,
+    "stream_chunks": 2,
+    "usage": {
+      "prompt_tokens": 19,
+      "completion_tokens": 4,
+      "total_tokens": 23
+    },
+    "local_token_counts": {
+      "prompt": 11,
+      "thinking": 0,
+      "response": 7,
+      "total_completion": 7
+    },
+    "timestamp_utc": "2026-02-26T09:05:19.797322+00:00"
+  }
+]

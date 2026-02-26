@@ -112,13 +112,19 @@ def build_client(endpoint_id: str) -> OpenAI:
 def _parse_thinking(content: str) -> tuple[str, str]:
     """Split content into (thinking_content, response_content).
 
-    Qwen3 wraps chain-of-thought in <think>...</think> at the start of the
-    output. Everything after the closing tag is the actual answer.
-    Returns empty string for thinking_content when the tag is absent.
+    Handles three cases:
+      1. Full block:  <think>...</think> answer
+      2. Close-only:  </think> answer  (prefill was </think>\\n — no opening tag)
+      3. No tags:     plain answer
     """
+    # Full <think>...</think> block
     match = re.match(r"<think>(.*?)</think>\s*", content, re.DOTALL)
     if match:
         return match.group(1).strip(), content[match.end():].strip()
+    # Prefill was </think>\n — content starts with the closing tag only
+    match = re.match(r"</think>\s*", content)
+    if match:
+        return "", content[match.end():].strip()
     return "", content.strip()
 
 

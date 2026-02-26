@@ -7,44 +7,51 @@ Experiments measuring LLM inference behavior (latency, throughput, token usage) 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env  # Add your RUNPOD_API_KEY
-python run_experiment.py --model qwen3-32b "What is the capital of France?"
+python run_experiment.py --model qwen3-8b "What is the capital of France?"
 ```
 
-## CLI Usage
+## Models
+
+| Alias | Model |
+|---|---|
+| `qwen3-4b` | `qwen/qwen3-4b` |
+| `qwen3-8b` | `qwen/qwen3-8b` |
+| `qwen3-14b` | `qwen/qwen3-14b` |
+| `qwen3-32b` | `qwen/qwen3-32b` |
+
+## run_experiment.py — smoke tests
 
 ```bash
-# Basic non-streaming request
-python run_experiment.py -m qwen3-32b "Your prompt here"
+# Streaming + JSON output for each model
+python run_experiment.py -m qwen3-4b  --stream --max-tokens 200 --json-out results/smoke_4b.json  "Say hello"
+python run_experiment.py -m qwen3-8b  --stream --max-tokens 200 --json-out results/smoke_8b.json  "Say hello"
+python run_experiment.py -m qwen3-14b --stream --max-tokens 200 --json-out results/smoke_14b.json "Say hello"
+python run_experiment.py -m qwen3-32b --stream --max-tokens 200 --json-out results/smoke_32b.json "Say hello"
 
-# Disable thinking
-python run_experiment.py -m qwen3-32b --no-think "Your prompt here"
-
-# Streaming with custom temperature and token limit
-python run_experiment.py -m qwen3-32b --stream --max-tokens 512 --t 0.3 "Explain quantum computing"
-
-# Save result as JSON with streaming
-python run_experiment.py -m qwen3-32b --stream --max-tokens 1000 --json-out results/test1.json "How many r's are there in strawberry?"
-
-# Check if an endpoint is alive and model name is correct
+# Endpoint health check (validates model name + liveness)
+python run_experiment.py -m qwen3-4b  --ping
+python run_experiment.py -m qwen3-8b  --ping
+python run_experiment.py -m qwen3-14b --ping
 python run_experiment.py -m qwen3-32b --ping
 ```
 
+## run_experiments_prefills.py — prefill demo
 
-## Models available
+Runs the default 5-prefill battery (`no_prefill`, `cheeky_think`, `think_close`, `think_seeded`, `answer_steer`) and saves results to JSON.
 
-Found in `endpoints.json`:
-- `qwen/qwen3-32b`
-- `qwen/qwen3-14b`
-- `qwen/qwen3-8b`
-- `qwen/qwen3-4b`
+```bash
+# Demo run — outputs results/prefill_demo.json
+python run_experiments_prefills.py -m qwen3-8b --json-out results/prefill_demo.json
 
-
+# Single custom prefill
+python run_experiments_prefills.py -m qwen3-8b --prefill "</think>" "Explain gravity"
+```
 
 ## Endpoint Configuration
 
 RunPod vLLM environment variable overrides applied to our endpoints:
 
-| Variable | Default | Our Max Setting | Reason |
+| Variable | Default | Our Setting | Reason |
 |---|---|---|---|
-| `MAX_MODEL_LEN` | `0` (auto → 40960) | `32768` | Reduce VRAM usage to fit within worker GPU memory |
+| `MAX_MODEL_LEN` | `0` (auto → 40960) | `32768` | Reduce VRAM usage |
 | `ENFORCE_EAGER` | `false` | `true` | Disable CUDA graph capture to avoid OOM during init |
